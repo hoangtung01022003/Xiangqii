@@ -1,0 +1,2 @@
+obj\Debug\net8.0\Protos/Chess.cs \
+obj\Debug\net8.0\Protos/ChessGrpc.cs: Protos/chess.proto

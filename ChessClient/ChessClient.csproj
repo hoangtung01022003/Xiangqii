@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net8.0-windows</TargetFramework>
+        <UseWPF>true</UseWPF>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Grpc.Net.Client" Version="2.65.0" />
+        <PackageReference Include="Google.Protobuf" Version="3.27.2" />
+        <PackageReference Include="Grpc.Tools" Version="2.65.0" />
+        <PackageReference Include="ChessDotNet" Version="1.0.0" />
+    </ItemGroup>
+    <ItemGroup>
+        <Protobuf Include="Protos\chess.proto" GrpcServices="Client" />
+        <Resource Include="Images\*.png" />
+    </ItemGroup>
+</Project>

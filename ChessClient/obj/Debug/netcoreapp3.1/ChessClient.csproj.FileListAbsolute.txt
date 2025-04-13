@@ -1,0 +1,4 @@
+D:\congviec\ChessGame.NET\ChessClient\obj\Debug\netcoreapp3.1\MainWindow.g.cs
+D:\congviec\ChessGame.NET\ChessClient\obj\Debug\netcoreapp3.1\App.g.cs
+D:\congviec\ChessGame.NET\ChessClient\obj\Debug\netcoreapp3.1\ChessClient_MarkupCompile.cache
+D:\congviec\ChessGame.NET\ChessClient\obj\Debug\netcoreapp3.1\ChessClient_MarkupCompile.lref
