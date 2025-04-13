@@ -8,8 +8,8 @@ builder.Services.AddGrpc();
 // Đăng ký ChessServiceImpl với lifetime Singleton
 builder.Services.AddSingleton<ChessServiceImpl>();
 
-// Cố định port 5038
-builder.WebHost.UseUrls("http://localhost:5038");
+// Nghe trên mọi giao diện mạng
+builder.WebHost.UseUrls("http://0.0.0.0:5038");
 
 var app = builder.Build();
 
