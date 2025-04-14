@@ -31,18 +31,38 @@ builder.Services.AddSingleton<ChessServiceImpl>();
 var app = builder.Build();
 
 // Hiển thị thông tin mạng khi khởi động
+Console.ForegroundColor = ConsoleColor.Green;
 Console.WriteLine("=== Xiangqi Chess Server ===");
 Console.WriteLine("Server đã khởi động ở cổng 5038");
-Console.WriteLine("Các địa chỉ IP có thể kết nối:");
+Console.WriteLine("Địa chỉ IP để kết nối:");
+
+// Hiển thị IP một cách rõ ràng và dễ đọc
 foreach (var ip in Dns.GetHostAddresses(Dns.GetHostName())
     .Where(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork))
 {
-    Console.WriteLine($"- {ip}");
+    // Hiển thị IP nội bộ rõ ràng hơn
+    if (ip.ToString().StartsWith("192.168.") || 
+        ip.ToString().StartsWith("10.") || 
+        ip.ToString().StartsWith("172."))
+    {
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine($"* {ip} (sử dụng IP này để kết nối trong mạng nội bộ)");
+    }
+    else
+    {
+        Console.WriteLine($"- {ip}");
+    }
 }
+Console.ResetColor();
+
+Console.WriteLine("\nHướng dẫn:");
+Console.WriteLine("1. Ghi lại một trong các địa chỉ IP bên trên");
+Console.WriteLine("2. Trên máy khách, nhập địa chỉ IP này vào ô nhập và nhấn Connect");
+Console.WriteLine("3. Đảm bảo tường lửa cho phép kết nối đến cổng 5038");
 
 // Cấu hình pipeline
 app.UseRouting();
 app.MapGrpcService<ChessServiceImpl>();
-app.MapGet("/", () => "Máy chủ gRPC cho cờ tướng đang chạy.");
+app.MapGet("/", () => "Máy chủ cờ tướng đang chạy.");
 
 await app.RunAsync();

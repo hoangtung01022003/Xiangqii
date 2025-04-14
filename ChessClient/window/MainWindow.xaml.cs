@@ -14,8 +14,6 @@ using ChessServer;
 using ChessClient.Xiangqi;
 using System.IO;
 using Path = System.IO.Path;
-using System.Threading;
-using System.Net.Http;
 
 namespace ChessClient.window
 {
@@ -188,56 +186,40 @@ namespace ChessClient.window
 
         if (string.IsNullOrEmpty(currentFen))
         {
-          StatusTextBlock.Text = "Trò chơi chưa bắt đầu. Vui lòng nhấn 'Ván mới'.";
+          StatusTextBlock.Text = "Game not started. Please click 'New Game'.";
           LogToConsole("Game not started: currentFen is empty.");
           return;
         }
 
-        var game = new XiangqiGame(currentFen);
-        var targetPiece = game.GetPieceAt(pos);
+        var targetPiece = new XiangqiGame(currentFen).GetPieceAt(pos);
 
         // Nếu đã chọn một quân cờ trước đó, đây là ô đích
         if (selectedPosition != null)
         {
           var from = selectedPosition;
           var to = pos;
+          var game = new XiangqiGame(currentFen);
           var move = new XiangqiMove(from, to, playerColor == "red" ? Player.Red : Player.Black);
 
           if (game.IsValidMove(move))
           {
-            StatusTextBlock.Text = "Đang gửi nước đi...";
+            // Gửi yêu cầu di chuyển đến server
+            var request = new MoveRequest { From = from.ToNotation(), To = to.ToNotation() };
+            var response = await client.MakeMoveAsync(request);
+            LogToConsole($"Moved from {from.ToNotation()} to {to.ToNotation()}: {response.Success} - {response.Message}");
 
-            try
+            if (response.Success)
             {
-              // Gửi yêu cầu di chuyển đến server với PlayerId trong header
-              var headers = new Metadata
-          {
-            { "PlayerId", playerId }
-          };
-
-              var request = new MoveRequest { From = from.ToNotation(), To = to.ToNotation() };
-              var response = await client.MakeMoveAsync(request, headers);
-
-              LogToConsole($"Moved from {from.ToNotation()} to {to.ToNotation()}: {response.Success} - {response.Message}");
-
-              if (response.Success)
-              {
-                StatusTextBlock.Text = "Nước đi thành công. Đang chờ đối thủ...";
-              }
-              else
-              {
-                StatusTextBlock.Text = $"Nước đi thất bại: {response.Message}";
-              }
+              StatusTextBlock.Text = "Move successful. Waiting for opponent's turn...";
             }
-            catch (Exception ex)
+            else
             {
-              StatusTextBlock.Text = "Lỗi khi gửi nước đi";
-              LogToConsole($"Error sending move: {ex.Message}", ex);
+              StatusTextBlock.Text = $"Move failed: {response.Message}";
             }
           }
           else
           {
-            StatusTextBlock.Text = "Nước đi không hợp lệ.";
+            StatusTextBlock.Text = "Invalid move.";
             LogToConsole($"Invalid move from {from.ToNotation()} to {to.ToNotation()}");
           }
 
@@ -254,12 +236,12 @@ namespace ChessClient.window
           ClearAllHighlights();
           HighlightSquare(pos, Brushes.LightGray, 3); // Tô sáng ô đang chọn màu xám nhạt
           HighlightLegalMoves(pos);
-          StatusTextBlock.Text = $"Đã chọn {posStr}. Hãy chọn ô đích.";
+          StatusTextBlock.Text = $"Selected {posStr}. Choose destination.";
         }
         else
         {
-          StatusTextBlock.Text = targetPiece == null ? $"Không có quân cờ tại {posStr}." :
-                                isMyTurn ? "Hãy chọn quân cờ của bạn." : "Chưa đến lượt của bạn.";
+          StatusTextBlock.Text = targetPiece == null ? $"No piece at {posStr}." :
+                                 isMyTurn ? "Select your piece." : "Not your turn.";
           LogToConsole($"Cannot select piece at {posStr}: pieceOwner={targetPiece?.Owner}, playerColor={playerColor}, isMyTurn={isMyTurn}");
         }
       }
@@ -484,15 +466,12 @@ namespace ChessClient.window
     {
       try
       {
-        playerId = Guid.NewGuid().ToString();
+        // Dùng IP từ TextBox và cổng mặc định là 5038
         string ipAddress = ServerIpTextBox.Text;
+        int port = 5038; // Cổng mặc định
 
-        // Lấy cổng từ TextBox và kiểm tra tính hợp lệ
-        if (!int.TryParse(ServerPortTextBox.Text, out int port))
-        {
-          MessageBox.Show("Cổng không hợp lệ. Vui lòng nhập một số nguyên.", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
-          return;
-        }
+        playerId = Guid.NewGuid().ToString();
+        LogToConsole($"Đang kết nối tới http://{ipAddress}:{port}");
 
         // Hiển thị thông báo đang kết nối
         StatusTextBlock.Text = $"Đang kết nối đến {ipAddress}:{port}...";
@@ -501,37 +480,17 @@ namespace ChessClient.window
         // Cấu hình cho HTTP/2 không bảo mật (lưu ý - chỉ dùng cho mạng nội bộ tin cậy)
         AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
 
-        // Cấu hình HttpClient với thời gian chờ dài hơn
-        var httpClientHandler = new HttpClientHandler();
-        var httpClient = new HttpClient(httpClientHandler)
+        // Tạo kênh gRPC với cấu hình phù hợp cho kết nối mạng
+        var options = new GrpcChannelOptions
         {
-          Timeout = TimeSpan.FromSeconds(30)
-        };
-
-        // Tạo kênh gRPC
-        var channelOptions = new GrpcChannelOptions
-        {
-          HttpClient = httpClient,
           MaxReceiveMessageSize = 16 * 1024 * 1024, // 16 MB
           MaxSendMessageSize = 16 * 1024 * 1024     // 16 MB
         };
 
-        LogToConsole($"Đang kết nối tới http://{ipAddress}:{port}");
-        channel = GrpcChannel.ForAddress($"http://{ipAddress}:{port}", channelOptions);
+        channel = GrpcChannel.ForAddress($"http://{ipAddress}:{port}", options);
         client = new ChessService.ChessServiceClient(channel);
 
-        // Thiết lập thời gian chờ cho cuộc gọi gRPC
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        var headers = new Metadata
-    {
-      { "PlayerId", playerId }
-    };
-
-        var connectResponse = await client.ConnectAsync(
-          new ConnectRequest { PlayerId = playerId },
-          headers,
-          deadline: deadline
-        );
+        var connectResponse = await client.ConnectAsync(new ConnectRequest { PlayerId = playerId });
 
         if (string.IsNullOrEmpty(connectResponse.Color))
         {
@@ -547,30 +506,15 @@ namespace ChessClient.window
         ResignButton.IsEnabled = true;
 
         // Bắt đầu luồng nhận cập nhật trạng thái trò chơi
-        cancellationTokenSource = new CancellationTokenSource();
         _ = Task.Run(async () =>
         {
           try
           {
-            var headers = new Metadata
-            {
-          { "PlayerId", playerId }
-            };
-
-            var call = client.GetGameState(
-              new GameStateRequest { PlayerId = playerId },
-              headers
-            );
-
-            await foreach (var state in call.ResponseStream.ReadAllAsync(CancellationTokenSource.Token))
+            var call = client.GetGameState(new GameStateRequest { PlayerId = playerId });
+            await foreach (var state in call.ResponseStream.ReadAllAsync())
             {
               Dispatcher.Invoke(() => UpdateGameState(state));
             }
-          }
-          catch (RpcException ex) when (ex.StatusCode == StatusCode.Cancelled)
-          {
-            // Bình thường khi hủy
-            Dispatcher.Invoke(() => LogToConsole("Luồng cập nhật trạng thái bị hủy."));
           }
           catch (Exception ex)
           {
@@ -578,8 +522,6 @@ namespace ChessClient.window
             {
               StatusTextBlock.Text = "Mất kết nối với máy chủ.";
               LogToConsole($"Lỗi trong luồng trạng thái trò chơi: {ex.Message}", ex);
-
-              // Kích hoạt kết nối lại
               ConnectButton.IsEnabled = true;
               NewGameButton.IsEnabled = false;
               ResignButton.IsEnabled = false;
@@ -598,57 +540,16 @@ namespace ChessClient.window
     {
       try
       {
-        NewGameButton.IsEnabled = false;
-        StatusTextBlock.Text = "Đang bắt đầu trò chơi mới...";
-
-        var headers = new Metadata
-    {
-      { "PlayerId", playerId }
-    };
-
-        var response = await client.StartGameAsync(
-          new StartGameRequest { PlayerId = playerId },
-          headers
-        );
-
+        var response = await client.StartGameAsync(new StartGameRequest { PlayerId = playerId });
         StatusTextBlock.Text = response.Message;
-        NewGameButton.IsEnabled = true;
       }
       catch (Exception ex)
       {
-        StatusTextBlock.Text = "Lỗi khi bắt đầu trò chơi.";
-        LogToConsole($"Lỗi bắt đầu trò chơi: {ex.Message}", ex);
-        NewGameButton.IsEnabled = true;
+        StatusTextBlock.Text = "Error starting game.";
+        LogToConsole($"Error starting game: {ex.Message}", ex);
       }
     }
 
-    private async void ResignButton_Click(object sender, RoutedEventArgs e)
-    {
-      try
-      {
-        ResignButton.IsEnabled = false;
-        StatusTextBlock.Text = "Đang đầu hàng...";
-
-        var headers = new Metadata
-    {
-      { "PlayerId", playerId }
-    };
-
-        var response = await client.ResignAsync(
-          new ResignRequest { PlayerId = playerId },
-          headers
-        );
-
-        StatusTextBlock.Text = response.Message;
-        ResignButton.IsEnabled = true;
-      }
-      catch (Exception ex)
-      {
-        StatusTextBlock.Text = "Lỗi khi đầu hàng.";
-        LogToConsole($"Lỗi đầu hàng: {ex.Message}", ex);
-        ResignButton.IsEnabled = true;
-      }
-    }
     private async void ResignButton_Click(object sender, RoutedEventArgs e)
     {
       try

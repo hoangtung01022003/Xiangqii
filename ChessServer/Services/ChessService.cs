@@ -12,6 +12,8 @@ namespace ChessServer.Services
     {
         private readonly Dictionary<string, string> players = new Dictionary<string, string>(); // color -> player_id
         private XiangqiGame game;
+        // Danh sách các luồng phát trực tiếp đang hoạt động
+        private readonly List<IServerStreamWriter<GameStateResponse>> activeStreams = new List<IServerStreamWriter<GameStateResponse>>();
 
         private static void LogToConsole(string message, Exception ex = null)
         {
@@ -22,107 +24,196 @@ namespace ChessServer.Services
             Console.WriteLine(logMessage);
         }
 
+        // Phương thức để phát sóng trạng thái trò chơi đến tất cả người chơi
+        private async Task BroadcastGameState()
+        {
+            try
+            {
+                if (game == null)
+                {
+                    // Nếu không có trò chơi, gửi thông báo
+                    foreach (var stream in activeStreams)
+                    {
+                        try
+                        {
+                            await stream.WriteAsync(new GameStateResponse
+                            {
+                                Message = "Game not started"
+                            });
+                        }
+                        catch
+                        {
+                            // Bỏ qua lỗi cho từng luồng
+                        }
+                    }
+                    return;
+                }
+
+                // Tạo trạng thái trò chơi để gửi
+                var response = new GameStateResponse
+                {
+                    Fen = game.GetFen(),
+                    CurrentTurn = game.WhoseTurn.ToString().ToLower(),
+                    IsCheck = game.IsInCheck(game.WhoseTurn),
+                    IsCheckmate = game.IsCheckmate(game.WhoseTurn),
+                    IsStalemate = game.IsStalemate(game.WhoseTurn)
+                };
+
+                // Thông báo tùy thuộc vào trạng thái trò chơi
+                if (game.IsCheckmate(game.WhoseTurn))
+                {
+                    response.Message = $"Checkmate! {(game.WhoseTurn == Player.Red ? "Black" : "Red")} wins!";
+                }
+                else if (game.IsStalemate(game.WhoseTurn))
+                {
+                    response.Message = "Stalemate! Game is a draw.";
+                }
+                else if (game.IsInCheck(game.WhoseTurn))
+                {
+                    response.Message = "Check!";
+                }
+
+                var failedStreams = new List<IServerStreamWriter<GameStateResponse>>();
+
+                // Gửi đến tất cả các luồng đang hoạt động
+                foreach (var stream in activeStreams)
+                {
+                    try
+                    {
+                        await stream.WriteAsync(response);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Đánh dấu luồng thất bại để xóa
+                        LogToConsole($"Failed to send to stream: {ex.Message}");
+                        failedStreams.Add(stream);
+                    }
+                }
+
+                // Xóa các luồng thất bại
+                if (failedStreams.Count > 0)
+                {
+                    lock (activeStreams)
+                    {
+                        foreach (var stream in failedStreams)
+                        {
+                            activeStreams.Remove(stream);
+                        }
+                    }
+                    LogToConsole($"Removed {failedStreams.Count} failed streams. {activeStreams.Count} streams remaining.");
+                }
+
+                LogToConsole($"Broadcasted game state to {activeStreams.Count} players. Turn: {response.CurrentTurn}, Check: {response.IsCheck}, Checkmate: {response.IsCheckmate}");
+            }
+            catch (Exception ex)
+            {
+                LogToConsole($"Error broadcasting game state: {ex.Message}", ex);
+            }
+        }
         public override Task<ConnectResponse> Connect(ConnectRequest request, ServerCallContext context)
         {
             try
             {
-                LogToConsole($"Player {request.PlayerId} attempting to connect.");
+                var clientIp = context.GetHttpContext().Connection.RemoteIpAddress?.ToString() ?? "unknown";
+                LogToConsole($"Người chơi {request.PlayerId} đang cố gắng kết nối từ {clientIp}");
+
                 if (string.IsNullOrEmpty(request.PlayerId))
-                    return Task.FromResult(new ConnectResponse { Message = "Invalid PlayerId" });
+                    return Task.FromResult(new ConnectResponse { Message = "ID người chơi không hợp lệ" });
 
                 var existingColor = players.FirstOrDefault(p => p.Value == request.PlayerId).Key;
                 if (existingColor != null)
                 {
-                    players.Remove(existingColor);
-                    LogToConsole($"Removed existing connection for PlayerId: {request.PlayerId}");
+                    // Người chơi đã kết nối trước đó - giữ nguyên màu sắc
+                    LogToConsole($"Người chơi {request.PlayerId} được kết nối lại với màu {existingColor}");
+                    return Task.FromResult(new ConnectResponse
+                    {
+                        Color = existingColor,
+                        Message = "Kết nối lại thành công"
+                    });
                 }
 
                 if (players.Count >= 2)
-                    return Task.FromResult(new ConnectResponse { Message = "Server is full" });
+                    return Task.FromResult(new ConnectResponse { Message = "Máy chủ đã đủ người chơi" });
 
                 string color = players.Count == 0 ? "red" : "black";
                 players[color] = request.PlayerId;
-                LogToConsole($"Player {request.PlayerId} connected as {color}");
+                LogToConsole($"Người chơi {request.PlayerId} đã kết nối với màu {color} từ {clientIp}");
 
                 return Task.FromResult(new ConnectResponse
                 {
                     Color = color,
-                    Message = "Connected successfully"
+                    Message = "Kết nối thành công"
                 });
             }
             catch (Exception ex)
             {
-                LogToConsole($"Error handling connect request: {ex.Message}", ex);
-                return Task.FromResult(new ConnectResponse { Message = "Error connecting." });
+                LogToConsole($"Lỗi khi xử lý yêu cầu kết nối: {ex.Message}", ex);
+                return Task.FromResult(new ConnectResponse { Message = "Lỗi kết nối." });
             }
         }
 
-        public override Task<StartGameResponse> StartGame(StartGameRequest request, ServerCallContext context)
+        public override async Task<StartGameResponse> StartGame(StartGameRequest request, ServerCallContext context)
         {
             try
             {
-                LogToConsole($"Player {request.PlayerId} requesting to start game.");
+                LogToConsole($"Người chơi {request.PlayerId} yêu cầu bắt đầu trò chơi.");
+
                 if (players.Count < 2)
-                    return Task.FromResult(new StartGameResponse { Message = "Not enough players" });
+                    return new StartGameResponse { Message = "Không đủ người chơi" };
 
                 game = new XiangqiGame();
-                LogToConsole("New Xiangqi game started.");
-                return Task.FromResult(new StartGameResponse { Message = "Game started" });
+                LogToConsole("Ván cờ tướng mới đã bắt đầu.");
+
+                // Thông báo cho tất cả người chơi về trạng thái trò chơi mới
+                await BroadcastGameState();
+
+                return new StartGameResponse { Message = "Trò chơi đã bắt đầu" };
             }
             catch (Exception ex)
             {
-                LogToConsole($"Error starting game: {ex.Message}", ex);
-                return Task.FromResult(new StartGameResponse { Message = "Error starting game." });
+                LogToConsole($"Lỗi khi bắt đầu trò chơi: {ex.Message}", ex);
+                return new StartGameResponse { Message = "Lỗi khi bắt đầu trò chơi." };
             }
         }
 
-        public override Task<MoveResponse> MakeMove(MoveRequest request, ServerCallContext context)
+        public override async Task<MoveResponse> MakeMove(MoveRequest request, ServerCallContext context)
         {
             try
             {
                 LogToConsole($"Processing move from {request.From} to {request.To}...");
+                string clientIp = context.GetHttpContext()?.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
-                // Lấy PlayerId từ metadata
-                string playerId = context.RequestHeaders.FirstOrDefault(h => h.Key == "PlayerId")?.Value;
-                if (string.IsNullOrEmpty(playerId))
+                // Kiểm tra xem trò chơi đã bắt đầu chưa
+                if (game == null)
                 {
-                    LogToConsole("Missing PlayerId in request headers.");
-                    return Task.FromResult(new MoveResponse
-                    {
-                        Success = false,
-                        Message = "Missing PlayerId in request"
-                    });
+                    LogToConsole($"Move rejected: Game not started");
+                    return new MoveResponse { Success = false, Message = "Game not started" };
                 }
 
-                if (game == null)
-                    return Task.FromResult(new MoveResponse
-                    {
-                        Success = false,
-                        Message = "Game not started"
-                    });
-
+                // Phân tích vị trí
                 if (!TryParsePosition(request.From, out XiangqiPosition from) || !TryParsePosition(request.To, out XiangqiPosition to))
-                    return Task.FromResult(new MoveResponse
-                    {
-                        Success = false,
-                        Message = "Invalid position format"
-                    });
+                {
+                    LogToConsole($"Move rejected: Invalid position format");
+                    return new MoveResponse { Success = false, Message = "Invalid position format" };
+                }
 
+                // Kiểm tra xem có quân cờ tại vị trí bắt đầu không
                 var piece = game.GetPieceAt(from);
                 if (piece == null)
-                    return Task.FromResult(new MoveResponse
-                    {
-                        Success = false,
-                        Message = "No piece at starting position"
-                    });
+                {
+                    LogToConsole($"Move rejected: No piece at starting position {request.From}");
+                    return new MoveResponse { Success = false, Message = "No piece at starting position" };
+                }
 
-                // Kiểm tra xem có phải lượt của người chơi hiện tại không
+                // Kiểm tra xem có đúng lượt không
                 if (piece.Owner != game.WhoseTurn)
-                    return Task.FromResult(new MoveResponse
-                    {
-                        Success = false,
-                        Message = "It's not your turn"
-                    });
+                {
+                    LogToConsole($"Move rejected: It's not {piece.Owner}'s turn. Current turn: {game.WhoseTurn}");
+                    return new MoveResponse { Success = false, Message = "It's not your turn" };
+                }
+
+                // Lấy PlayerId từ header nếu có
+                string playerId = context.RequestHeaders.FirstOrDefault(h => h.Key == "PlayerId")?.Value ?? "";
 
                 // Kiểm tra xem người chơi có đang di chuyển quân cờ của mình không
                 string playerColor = null;
@@ -135,94 +226,117 @@ namespace ChessServer.Services
                     }
                 }
 
-                if (playerColor == null)
-                    return Task.FromResult(new MoveResponse
-                    {
-                        Success = false,
-                        Message = "Player not connected"
-                    });
-
-                if ((playerColor == "red" && piece.Owner != Player.Red) ||
-                    (playerColor == "black" && piece.Owner != Player.Black))
+                if (!string.IsNullOrEmpty(playerId) && playerColor == null)
                 {
-                    return Task.FromResult(new MoveResponse
-                    {
-                        Success = false,
-                        Message = "You can only move your own pieces"
-                    });
+                    LogToConsole($"Move rejected: Unknown player ID {playerId}");
+                    return new MoveResponse { Success = false, Message = "Player not connected" };
                 }
 
+                if (!string.IsNullOrEmpty(playerColor) &&
+                    ((playerColor == "red" && piece.Owner != Player.Red) ||
+                     (playerColor == "black" && piece.Owner != Player.Black)))
+                {
+                    LogToConsole($"Move rejected: Player {playerId} ({playerColor}) tried to move opponent's piece");
+                    return new MoveResponse { Success = false, Message = "You can only move your own pieces" };
+                }
+
+                // Kiểm tra nước đi có hợp lệ không
                 XiangqiMove move = new XiangqiMove(from, to, game.WhoseTurn);
                 if (game.IsValidMove(move))
                 {
+                    // Thực hiện nước đi
                     game.MakeMove(move, true);
-                    string message = "Move accepted";
 
+                    string message = "Move accepted";
+                    bool gameOver = false;
+
+                    // Kiểm tra các điều kiện đặc biệt
                     if (game.IsInCheck(game.WhoseTurn))
                         message = "Check!";
-                    if (game.IsCheckmate(game.WhoseTurn))
-                        return Task.FromResult(new MoveResponse
-                        {
-                            Success = true,
-                            Message = "Checkmate! Game over"
-                        });
-                    if (game.IsStalemate(game.WhoseTurn))
-                        return Task.FromResult(new MoveResponse
-                        {
-                            Success = true,
-                            Message = "Stalemate! Game over"
-                        });
 
-                    LogToConsole($"Move accepted: {request.From} to {request.To}.");
-                    return Task.FromResult(new MoveResponse
+                    if (game.IsCheckmate(game.WhoseTurn))
                     {
-                        Success = true,
-                        Message = message
-                    });
+                        message = "Checkmate! Game over";
+                        gameOver = true;
+                    }
+                    else if (game.IsStalemate(game.WhoseTurn))
+                    {
+                        message = "Stalemate! Game over";
+                        gameOver = true;
+                    }
+
+                    LogToConsole($"Move accepted: {request.From} to {request.To}. {message}");
+
+                    // Cập nhật trạng thái trò chơi cho tất cả người chơi
+                    await BroadcastGameState();
+
+                    // Nếu trò chơi kết thúc, sẵn sàng cho ván mới
+                    if (gameOver)
+                    {
+                        // Giữ nguyên trạng thái game để có thể xem lại 
+                        // nhưng sau một khoảng thời gian, sẽ thiết lập lại
+                        _ = Task.Run(async () =>
+                        {
+                            await Task.Delay(10000); // Đợi 10 giây
+                            game = null;
+                            LogToConsole("Game reset after game over");
+                            await BroadcastGameState();
+                        });
+                    }
+
+                    return new MoveResponse { Success = true, Message = message };
                 }
 
-                LogToConsole("Move rejected: invalid move.");
-                return Task.FromResult(new MoveResponse
-                {
-                    Success = false,
-                    Message = "Invalid move"
-                });
+                LogToConsole($"Move rejected: Invalid move from {request.From} to {request.To}");
+                return new MoveResponse { Success = false, Message = "Invalid move" };
             }
             catch (Exception ex)
             {
                 LogToConsole($"Error processing move: {ex.Message}", ex);
-                return Task.FromResult(new MoveResponse
-                {
-                    Success = false,
-                    Message = $"Error: {ex.Message}"
-                });
+                return new MoveResponse { Success = false, Message = $"Error: {ex.Message}" };
             }
         }
-        public override Task<ResignResponse> Resign(ResignRequest request, ServerCallContext context)
+        public override async Task<ResignResponse> Resign(ResignRequest request, ServerCallContext context)
         {
             try
             {
-                LogToConsole($"Player {request.PlayerId} attempting to resign...");
+                LogToConsole($"Người chơi {request.PlayerId} đang cố gắng đầu hàng...");
+
                 if (string.IsNullOrEmpty(request.PlayerId))
-                    return Task.FromResult(new ResignResponse { Message = "Invalid PlayerId" });
+                    return new ResignResponse { Message = "ID người chơi không hợp lệ" };
 
                 if (game == null)
-                    return Task.FromResult(new ResignResponse { Message = "Game not started" });
+                    return new ResignResponse { Message = "Trò chơi chưa bắt đầu" };
 
                 var player = players.FirstOrDefault(x => x.Value == request.PlayerId);
                 if (player.Key == null)
-                    return Task.FromResult(new ResignResponse { Message = "Player not found" });
+                    return new ResignResponse { Message = "Không tìm thấy người chơi" };
 
                 string color = player.Key;
-                game = null;
-                players.Clear();
-                LogToConsole($"Player {color} resigned. Game reset.");
-                return Task.FromResult(new ResignResponse { Message = $"{color} resigned. Game over" });
+                game = null; // Đặt lại trò chơi
+
+                string message = $"{color} đã đầu hàng. Trò chơi kết thúc";
+                LogToConsole($"Người chơi {color} đã đầu hàng. Trò chơi đã đặt lại.");
+
+                // Thông báo cho tất cả người chơi về việc đầu hàng
+                foreach (var stream in activeStreams)
+                {
+                    try
+                    {
+                        await stream.WriteAsync(new GameStateResponse { Message = message });
+                    }
+                    catch
+                    {
+                        // Bỏ qua lỗi cho từng luồng
+                    }
+                }
+
+                return new ResignResponse { Message = message };
             }
             catch (Exception ex)
             {
-                LogToConsole($"Error processing resign request: {ex.Message}", ex);
-                return Task.FromResult(new ResignResponse { Message = "Error resigning." });
+                LogToConsole($"Lỗi khi xử lý yêu cầu đầu hàng: {ex.Message}", ex);
+                return new ResignResponse { Message = "Lỗi khi đầu hàng." };
             }
         }
 
@@ -230,24 +344,32 @@ namespace ChessServer.Services
         {
             try
             {
-                LogToConsole($"Streaming game state for player {request.PlayerId}...");
+                LogToConsole($"Bắt đầu phát trực tiếp trạng thái trò chơi cho người chơi {request.PlayerId}...");
+
                 if (string.IsNullOrEmpty(request.PlayerId))
                 {
-                    await responseStream.WriteAsync(new GameStateResponse { Message = "Invalid PlayerId" });
+                    await responseStream.WriteAsync(new GameStateResponse { Message = "ID người chơi không hợp lệ" });
                     return;
                 }
 
                 if (!players.ContainsValue(request.PlayerId))
                 {
-                    await responseStream.WriteAsync(new GameStateResponse { Message = "Player not connected" });
+                    await responseStream.WriteAsync(new GameStateResponse { Message = "Người chơi chưa kết nối" });
                     return;
                 }
 
-                while (!context.CancellationToken.IsCancellationRequested)
+                // Thêm luồng này vào danh sách các luồng đang hoạt động
+                lock (activeStreams)
                 {
+                    activeStreams.Add(responseStream);
+                }
+
+                try
+                {
+                    // Gửi trạng thái ban đầu
                     if (game == null)
                     {
-                        await responseStream.WriteAsync(new GameStateResponse { Message = "Game not started" });
+                        await responseStream.WriteAsync(new GameStateResponse { Message = "Trò chơi chưa bắt đầu" });
                     }
                     else
                     {
@@ -260,12 +382,31 @@ namespace ChessServer.Services
                             IsStalemate = game.IsStalemate(game.WhoseTurn)
                         });
                     }
-                    await Task.Delay(3000);
+
+                    // Giữ kết nối mở cho đến khi bị hủy
+                    await Task.Delay(-1, context.CancellationToken);
+                }
+                catch (TaskCanceledException)
+                {
+                    // Dự kiến khi người dùng ngắt kết nối
+                    LogToConsole($"Luồng trạng thái trò chơi cho người chơi {request.PlayerId} đã kết thúc.");
+                }
+                catch (Exception ex)
+                {
+                    LogToConsole($"Lỗi trong luồng trạng thái trò chơi: {ex.Message}", ex);
+                }
+                finally
+                {
+                    // Đảm bảo loại bỏ luồng khỏi danh sách khi kết thúc
+                    lock (activeStreams)
+                    {
+                        activeStreams.Remove(responseStream);
+                    }
                 }
             }
             catch (Exception ex)
             {
-                LogToConsole($"Error streaming game state: {ex.Message}", ex);
+                LogToConsole($"Lỗi khi phát trực tiếp trạng thái trò chơi: {ex.Message}", ex);
             }
         }
 
@@ -284,12 +425,11 @@ namespace ChessServer.Services
                     return false;
 
                 position = new XiangqiPosition(file, rank);
-                LogToConsole($"Parsed position: {notation}");
                 return true;
             }
             catch (Exception ex)
             {
-                LogToConsole($"Error parsing position: {notation}", ex);
+                LogToConsole($"Lỗi phân tích vị trí: {notation}", ex);
                 position = null;
                 return false;
             }

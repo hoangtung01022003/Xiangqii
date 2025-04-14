@@ -104,8 +104,8 @@ namespace ChessClient.Xiangqi
                 }
                 return board;
             }
-            catch (Exception)
-      {
+            catch (Exception ex)
+            {
                 return new XiangqiPiece[9, 10];
             }
         }
