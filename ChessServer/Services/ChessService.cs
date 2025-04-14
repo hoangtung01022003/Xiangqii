@@ -31,25 +31,21 @@ namespace ChessServer.Services
             {
                 if (game == null)
                 {
-                    // Nếu không có trò chơi, gửi thông báo
                     foreach (var stream in activeStreams)
                     {
                         try
                         {
-                            await stream.WriteAsync(new GameStateResponse
-                            {
-                                Message = "Game not started"
-                            });
+                            await stream.WriteAsync(new GameStateResponse { Message = "Game not started" });
+                            LogToConsole($"Gửi trạng thái 'Game not started' tới luồng.");
                         }
                         catch
                         {
-                            // Bỏ qua lỗi cho từng luồng
+                            // Bỏ qua lỗi
                         }
                     }
                     return;
                 }
 
-                // Tạo trạng thái trò chơi để gửi
                 var response = new GameStateResponse
                 {
                     Fen = game.GetFen(),
@@ -59,7 +55,6 @@ namespace ChessServer.Services
                     IsStalemate = game.IsStalemate(game.WhoseTurn)
                 };
 
-                // Thông báo tùy thuộc vào trạng thái trò chơi
                 if (game.IsCheckmate(game.WhoseTurn))
                 {
                     response.Message = $"Checkmate! {(game.WhoseTurn == Player.Red ? "Black" : "Red")} wins!";
@@ -74,23 +69,20 @@ namespace ChessServer.Services
                 }
 
                 var failedStreams = new List<IServerStreamWriter<GameStateResponse>>();
-
-                // Gửi đến tất cả các luồng đang hoạt động
                 foreach (var stream in activeStreams)
                 {
                     try
                     {
                         await stream.WriteAsync(response);
+                        LogToConsole($"Gửi cập nhật trạng thái: FEN={response.Fen}, Turn={response.CurrentTurn}");
                     }
                     catch (Exception ex)
                     {
-                        // Đánh dấu luồng thất bại để xóa
-                        LogToConsole($"Failed to send to stream: {ex.Message}");
+                        LogToConsole($"Không gửi được tới luồng: {ex.Message}");
                         failedStreams.Add(stream);
                     }
                 }
 
-                // Xóa các luồng thất bại
                 if (failedStreams.Count > 0)
                 {
                     lock (activeStreams)
@@ -100,14 +92,14 @@ namespace ChessServer.Services
                             activeStreams.Remove(stream);
                         }
                     }
-                    LogToConsole($"Removed {failedStreams.Count} failed streams. {activeStreams.Count} streams remaining.");
+                    LogToConsole($"Đã xóa {failedStreams.Count} luồng lỗi. Còn {activeStreams.Count} luồng.");
                 }
 
-                LogToConsole($"Broadcasted game state to {activeStreams.Count} players. Turn: {response.CurrentTurn}, Check: {response.IsCheck}, Checkmate: {response.IsCheckmate}");
+                LogToConsole($"Đã phát trạng thái trò chơi tới {activeStreams.Count} người chơi. Turn: {response.CurrentTurn}, Check: {response.IsCheck}, Checkmate: {response.IsCheckmate}");
             }
             catch (Exception ex)
             {
-                LogToConsole($"Error broadcasting game state: {ex.Message}", ex);
+                LogToConsole($"Lỗi khi phát trạng thái trò chơi: {ex.Message}", ex);
             }
         }
         public override Task<ConnectResponse> Connect(ConnectRequest request, ServerCallContext context)
@@ -344,72 +336,74 @@ namespace ChessServer.Services
         {
             try
             {
-                LogToConsole($"Bắt đầu phát trực tiếp trạng thái trò chơi cho người chơi {request.PlayerId}...");
+                var clientIp = context.GetHttpContext().Connection.RemoteIpAddress?.ToString() ?? "unknown";
+                LogToConsole($"Bắt đầu phát trực tiếp trạng thái trò chơi cho người chơi {request.PlayerId} từ {clientIp}...");
 
                 if (string.IsNullOrEmpty(request.PlayerId))
                 {
                     await responseStream.WriteAsync(new GameStateResponse { Message = "ID người chơi không hợp lệ" });
+                    LogToConsole($"Gửi lỗi: ID người chơi không hợp lệ tới {clientIp}");
                     return;
                 }
 
                 if (!players.ContainsValue(request.PlayerId))
                 {
                     await responseStream.WriteAsync(new GameStateResponse { Message = "Người chơi chưa kết nối" });
+                    LogToConsole($"Gửi lỗi: Người chơi chưa kết nối tới {clientIp}");
                     return;
                 }
 
-                // Thêm luồng này vào danh sách các luồng đang hoạt động
                 lock (activeStreams)
                 {
                     activeStreams.Add(responseStream);
+                    LogToConsole($"Đã thêm luồng cho {request.PlayerId}. Tổng số luồng: {activeStreams.Count}");
                 }
 
                 try
                 {
-                    // Gửi trạng thái ban đầu
                     if (game == null)
                     {
                         await responseStream.WriteAsync(new GameStateResponse { Message = "Trò chơi chưa bắt đầu" });
+                        LogToConsole($"Gửi trạng thái 'Trò chơi chưa bắt đầu' tới {request.PlayerId} ({clientIp})");
                     }
                     else
                     {
-                        await responseStream.WriteAsync(new GameStateResponse
+                        var response = new GameStateResponse
                         {
                             Fen = game.GetFen(),
                             CurrentTurn = game.WhoseTurn.ToString().ToLower(),
                             IsCheck = game.IsInCheck(game.WhoseTurn),
                             IsCheckmate = game.IsCheckmate(game.WhoseTurn),
                             IsStalemate = game.IsStalemate(game.WhoseTurn)
-                        });
+                        };
+                        await responseStream.WriteAsync(response);
+                        LogToConsole($"Gửi trạng thái ban đầu tới {request.PlayerId} ({clientIp}): FEN={response.Fen}, Turn={response.CurrentTurn}");
                     }
 
-                    // Giữ kết nối mở cho đến khi bị hủy
                     await Task.Delay(-1, context.CancellationToken);
                 }
                 catch (TaskCanceledException)
                 {
-                    // Dự kiến khi người dùng ngắt kết nối
-                    LogToConsole($"Luồng trạng thái trò chơi cho người chơi {request.PlayerId} đã kết thúc.");
+                    LogToConsole($"Luồng trạng thái trò chơi cho người chơi {request.PlayerId} ({clientIp}) đã kết thúc.");
                 }
                 catch (Exception ex)
                 {
-                    LogToConsole($"Lỗi trong luồng trạng thái trò chơi: {ex.Message}", ex);
+                    LogToConsole($"Lỗi trong luồng trạng thái trò chơi cho {request.PlayerId} ({clientIp}): {ex.Message}", ex);
                 }
                 finally
                 {
-                    // Đảm bảo loại bỏ luồng khỏi danh sách khi kết thúc
                     lock (activeStreams)
                     {
                         activeStreams.Remove(responseStream);
+                        LogToConsole($"Đã xóa luồng cho {request.PlayerId}. Tổng số luồng còn lại: {activeStreams.Count}");
                     }
                 }
             }
             catch (Exception ex)
             {
-                LogToConsole($"Lỗi khi phát trực tiếp trạng thái trò chơi: {ex.Message}", ex);
+                LogToConsole($"Lỗi khi phát trực tiếp trạng thái trò chơi cho {request.PlayerId}: {ex.Message}", ex);
             }
         }
-
         private bool TryParsePosition(string notation, out XiangqiPosition position)
         {
             try

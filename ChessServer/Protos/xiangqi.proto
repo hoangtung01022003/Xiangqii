@@ -10,6 +10,7 @@ service ChessService {
     rpc MakeMove (MoveRequest) returns (MoveResponse);
     rpc Resign (ResignRequest) returns (ResignResponse);
     rpc GetGameState (GameStateRequest) returns (stream GameStateResponse);
+    
 }
 
 message ConnectRequest {

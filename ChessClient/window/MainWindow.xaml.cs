@@ -35,14 +35,11 @@ namespace ChessClient.window
         InitializeComponent();
         InitializeChessBoard();
         LoadPieceImages();
-        // Khởi tạo bàn cờ mặc định
-        currentFen = new XiangqiGame().GetFen();
-        UpdateGameState(new GameStateResponse { Fen = currentFen, CurrentTurn = "red" });
-        LogToConsole("MainWindow initialized successfully.");
+        LogToConsole("MainWindow khởi tạo thành công.");
       }
       catch (Exception ex)
       {
-        LogToConsole("Error initializing MainWindow.", ex);
+        LogToConsole("Lỗi khi khởi tạo MainWindow.", ex);
       }
     }
 
@@ -60,13 +57,13 @@ namespace ChessClient.window
     {
       try
       {
-        LogToConsole("Initializing Xiangqi board...");
+        LogToConsole("Khởi tạo bàn cờ Xiangqi...");
         ChessBoard.Children.Clear();
 
         double squareWidth = 450.0 / 9; // 50px mỗi cột
         double squareHeight = 500.0 / 10; // 50px mỗi hàng
 
-        // Đặt Image cho quân cờ
+        // Tạo các ô hình ảnh cho quân cờ
         for (int row = 0; row < 10; row++)
         {
           for (int col = 0; col < 9; col++)
@@ -74,73 +71,81 @@ namespace ChessClient.window
             Image img = new Image
             {
               Tag = new XiangqiPosition(col + 1, row),
-              Width = 50,  // Giảm kích thước để lộ lưới
-              Height = 50, // Giảm kích thước để lộ lưới
+              Width = 50,
+              Height = 50,
               Stretch = Stretch.Uniform,
               IsHitTestVisible = true
             };
-            // Căn giữa ảnh trong ô
-            Canvas.SetLeft(img, col * squareWidth + (squareWidth - 50) / 2); // Căn giữa theo chiều ngang
-            Canvas.SetTop(img, row * squareHeight + (squareHeight - 50) / 2); // Căn giữa theo chiều dọc
-            Canvas.SetZIndex(img, 100); // Giữ z-index cao để tương tác
+            Canvas.SetLeft(img, col * squareWidth + (squareWidth - 50) / 2);
+            Canvas.SetTop(img, row * squareHeight + (squareHeight - 50) / 2);
+            Canvas.SetZIndex(img, 100);
             ChessBoard.Children.Add(img);
           }
         }
 
         ChessBoard.MouseDown += ChessBoard_MouseDown;
-        LogToConsole("Xiangqi board initialized.");
+        LogToConsole("Bàn cờ Xiangqi đã được khởi tạo.");
       }
       catch (Exception ex)
       {
-        LogToConsole("Error initializing Xiangqi board.", ex);
+        LogToConsole("Lỗi khi khởi tạo bàn cờ Xiangqi.", ex);
       }
     }
     private void LoadPieceImages()
     {
       try
       {
-        LogToConsole("Loading Xiangqi piece images...");
+        LogToConsole("Đang tải hình ảnh quân cờ Xiangqi...");
         var pieceMappings = new Dictionary<string, string>
-                {
-                    { "rk", "rk.png" }, // Tướng đỏ
-                    { "ra", "ra.png" }, // Sĩ đỏ
-                    { "rn", "rn.png" }, // Tượng đỏ
-                    { "rr", "rr.png" }, // Xe đỏ
-                    { "rb", "rb.png" }, // Pháo đỏ
-                    { "rc", "rc.png" }, // Mã đỏ
-                    { "rp", "rp.png" }, // Tốt đỏ
-                    { "bk", "bk.png" }, // Tướng đen
-                    { "ba", "ba.png" }, // Sĩ đen
-                    { "bn", "bn.png" }, // Tượng đen
-                    { "br", "br.png" }, // Xe đen
-                    { "bb", "bb.png" }, // Pháo đen
-                    { "bc", "bc.png" }, // Mã đen
-                    { "bp", "bp.png" }  // Tốt đen
-                };
+        {
+            { "rk", "Images/rk.png" }, // Tướng đỏ
+            { "ra", "Images/ra.png" }, // Sĩ đỏ
+            { "rn", "Images/rn.png" }, // Tượng đỏ
+            { "rr", "Images/rr.png" }, // Xe đỏ
+            { "rb", "Images/rb.png" }, // Pháo đỏ
+            { "rc", "Images/rc.png" }, // Mã đỏ
+            { "rp", "Images/rp.png" }, // Tốt đỏ
+            { "bk", "Images/bk.png" }, // Tướng đen
+            { "ba", "Images/ba.png" }, // Sĩ đen
+            { "bn", "Images/bn.png" }, // Tượng đen
+            { "br", "Images/br.png" }, // Xe đen
+            { "bb", "Images/bb.png" }, // Pháo đen
+            { "bc", "Images/bc.png" }, // Mã đen
+            { "bp", "Images/bp.png" }  // Tốt đen
+        };
 
-        string basePath = @"D:\congviec\ChessGame.NET\ChessClient\Images\";
         pieceImages.Clear();
         foreach (var piece in pieceMappings)
         {
-          string imagePath = Path.Combine(basePath, piece.Value);
-          if (!File.Exists(imagePath))
+          try
           {
-            LogToConsole($"Image not found: {imagePath}. Skipping...");
+            var uri = new Uri($"pack://application:,,,/{piece.Value}", UriKind.Absolute);
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.UriSource = uri;
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.EndInit();
+            pieceImages[piece.Key] = image;
+            LogToConsole($"Đã tải hình ảnh cho {piece.Key}: {piece.Value}");
+          }
+          catch (Exception ex)
+          {
+            LogToConsole($"Không tải được hình ảnh: {piece.Value}. Bỏ qua...", ex);
             continue;
           }
-          var image = new BitmapImage();
-          image.BeginInit();
-          image.UriSource = new Uri(imagePath, UriKind.Absolute);
-          image.CacheOption = BitmapCacheOption.OnLoad;
-          image.EndInit();
-          pieceImages[piece.Key] = image;
-          LogToConsole($"Loaded image for {piece.Key}: {imagePath}");
         }
-        LogToConsole($"Piece images loaded: {pieceImages.Count}");
+
+        LogToConsole($"Đã tải {pieceImages.Count} hình ảnh quân cờ.");
+        if (pieceImages.Count < pieceMappings.Count)
+        {
+          StatusTextBlock.Text = $"Cảnh báo: Chỉ tải được {pieceImages.Count}/{pieceMappings.Count} hình ảnh quân cờ.";
+          LogToConsole($"Lỗi: Không tải đủ hình ảnh, chỉ có {pieceImages.Count} hình ảnh được tải.");
+        }
       }
       catch (Exception ex)
       {
-        LogToConsole("Error loading piece images.", ex);
+        LogToConsole("Lỗi nghiêm trọng khi tải hình ảnh quân cờ.", ex);
+        StatusTextBlock.Text = "Lỗi: Không tải được hình ảnh quân cờ.";
       }
     }
     private void ChessBoard_MouseDown(object sender, MouseButtonEventArgs e)
@@ -317,26 +322,29 @@ namespace ChessClient.window
     {
       try
       {
-        if (state != null && state.Message.Contains("Game not started"))
+        if (state == null || string.IsNullOrEmpty(state.Fen))
         {
-          StatusTextBlock.Text = "Waiting for game to start...";
-          currentFen = null;
-          ClearAllHighlights();
-          ChessBoard.Children.OfType<Image>().ToList().ForEach(img => img.Source = null);
-          return;
+          StatusTextBlock.Text = "Trò chơi chưa bắt đầu. Nhấn 'New Game' để bắt đầu.";
+          currentFen = new XiangqiGame().GetFen(); // Sử dụng FEN mặc định
+          LogToConsole("Trạng thái trò chơi rỗng hoặc FEN không hợp lệ. Sử dụng FEN mặc định.");
+        }
+        else
+        {
+          currentFen = state.Fen;
+          LogToConsole($"Cập nhật trạng thái trò chơi với FEN: {currentFen}");
         }
 
-        currentFen = state?.Fen ?? currentFen ?? new XiangqiGame().GetFen();
-        LogToConsole($"Updating game state with FEN: {currentFen}");
+        var game = new XiangqiGame(currentFen);
 
-        var game = new XiangqiGame(currentFen); // Tạo instance của XiangqiGame từ FEN
+        ChessBoard.Children.OfType<Image>().ToList().ForEach(img => img.Source = null);
 
+        int piecesRendered = 0;
         for (int row = 0; row < 10; row++)
         {
           for (int col = 0; col < 9; col++)
           {
             XiangqiPosition pos = new XiangqiPosition(col + 1, row);
-            XiangqiPiece piece = game.GetPieceAt(pos); // Sử dụng GetPieceAt thay vì GetBoard
+            XiangqiPiece piece = game.GetPieceAt(pos);
             var img = ChessBoard.Children
                 .OfType<Image>()
                 .FirstOrDefault(i => i.Tag is XiangqiPosition p &&
@@ -344,30 +352,44 @@ namespace ChessClient.window
             if (img != null)
             {
               img.Source = GetPieceImage(piece);
-              img.Width = 50;  // Đảm bảo kích thước
-              img.Height = 50; // Đảm bảo kích thước
+              if (img.Source != null)
+              {
+                piecesRendered++;
+                // LogToConsole($"Đã gán hình ảnh tại {pos.ToNotation()}: {piece?.GetFenCharacter() ?? "trống"}");
+              }
+              else if (piece != null)
+              {
+                LogToConsole($"Không tìm thấy hình ảnh cho quân cờ tại {pos.ToNotation()}: {piece.GetFenCharacter()}");
+              }
+              img.Width = 50;
+              img.Height = 50;
               Canvas.SetZIndex(img, 100);
             }
           }
         }
 
+        LogToConsole($"Đã hiển thị {piecesRendered} quân cờ.");
+        if (piecesRendered == 0)
+        {
+          StatusTextBlock.Text = "Lỗi: Không hiển thị được quân cờ. Kiểm tra hình ảnh.";
+        }
+
         if (state != null)
         {
           isMyTurn = state.CurrentTurn.ToLower() == playerColor && !state.IsCheckmate && !state.IsStalemate;
-          StatusTextBlock.Text = $"Current turn: {state.CurrentTurn}";
-          if (state.IsCheck) StatusTextBlock.Text += " - Check!";
-          if (state.IsCheckmate) StatusTextBlock.Text = "Checkmate! Game over.";
-          else if (state.IsStalemate) StatusTextBlock.Text = "Stalemate! Game over.";
-          else if (state.Message.Contains("Draw")) StatusTextBlock.Text = "Draw! Game over.";
+          StatusTextBlock.Text = $"Lượt hiện tại: {(state.CurrentTurn ?? "chưa xác định")}";
+          if (state.IsCheck) StatusTextBlock.Text += " - Chiếu!";
+          if (state.IsCheckmate) StatusTextBlock.Text = "Chiếu hết! Kết thúc trò chơi.";
+          else if (state.IsStalemate) StatusTextBlock.Text = "Hòa cờ! Kết thúc trò chơi.";
+          else if (state.Message.Contains("Draw")) StatusTextBlock.Text = "Hòa! Kết thúc trò chơi.";
         }
-        else
-        {
-          StatusTextBlock.Text = "Waiting for server connection...";
-        }
+
+        LogToConsole($"Trạng thái cập nhật: isMyTurn={isMyTurn}, CurrentTurn={(state?.CurrentTurn ?? "null")}");
       }
       catch (Exception ex)
       {
-        LogToConsole($"Error updating game state: {ex.Message}", ex);
+        StatusTextBlock.Text = "Lỗi khi cập nhật trạng thái trò chơi.";
+        LogToConsole($"Lỗi cập nhật trạng thái trò chơi: {ex.Message}", ex);
       }
     }
     private XiangqiPiece[,] ParseFen(string fen)
@@ -466,25 +488,21 @@ namespace ChessClient.window
     {
       try
       {
-        // Dùng IP từ TextBox và cổng mặc định là 5038
         string ipAddress = ServerIpTextBox.Text;
-        int port = 5038; // Cổng mặc định
+        int port = 5038;
 
         playerId = Guid.NewGuid().ToString();
         LogToConsole($"Đang kết nối tới http://{ipAddress}:{port}");
 
-        // Hiển thị thông báo đang kết nối
         StatusTextBlock.Text = $"Đang kết nối đến {ipAddress}:{port}...";
         ConnectButton.IsEnabled = false;
 
-        // Cấu hình cho HTTP/2 không bảo mật (lưu ý - chỉ dùng cho mạng nội bộ tin cậy)
         AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
 
-        // Tạo kênh gRPC với cấu hình phù hợp cho kết nối mạng
         var options = new GrpcChannelOptions
         {
-          MaxReceiveMessageSize = 16 * 1024 * 1024, // 16 MB
-          MaxSendMessageSize = 16 * 1024 * 1024     // 16 MB
+          MaxReceiveMessageSize = 16 * 1024 * 1024,
+          MaxSendMessageSize = 16 * 1024 * 1024
         };
 
         channel = GrpcChannel.ForAddress($"http://{ipAddress}:{port}", options);
@@ -505,12 +523,34 @@ namespace ChessClient.window
         NewGameButton.IsEnabled = true;
         ResignButton.IsEnabled = true;
 
-        // Bắt đầu luồng nhận cập nhật trạng thái trò chơi
+        // Fetch initial game state using the streaming RPC
+        try
+        {
+          using var call = client.GetGameState(new GameStateRequest { PlayerId = playerId });
+          var responseStream = call.ResponseStream;
+          if (await responseStream.MoveNext()) // Wait for the first state
+          {
+            var initialState = responseStream.Current;
+            Dispatcher.Invoke(() => UpdateGameState(initialState));
+          }
+          else
+          {
+            LogToConsole("Không nhận được trạng thái ban đầu từ server.");
+            StatusTextBlock.Text = "Đã kết nối, nhưng không nhận được trạng thái trò chơi.";
+          }
+        }
+        catch (Exception ex)
+        {
+          LogToConsole($"Lỗi khi lấy trạng thái ban đầu: {ex.Message}", ex);
+          StatusTextBlock.Text = "Đã kết nối, nhưng không thể lấy trạng thái trò chơi.";
+        }
+
+        // Start streaming game state updates in the background
         _ = Task.Run(async () =>
         {
           try
           {
-            var call = client.GetGameState(new GameStateRequest { PlayerId = playerId });
+            using var call = client.GetGameState(new GameStateRequest { PlayerId = playerId });
             await foreach (var state in call.ResponseStream.ReadAllAsync())
             {
               Dispatcher.Invoke(() => UpdateGameState(state));

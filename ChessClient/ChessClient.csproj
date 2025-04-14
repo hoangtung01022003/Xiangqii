@@ -12,8 +12,21 @@
     </ItemGroup>
     <ItemGroup>
         <Protobuf Include="Protos\xiangqi.proto" GrpcServices="Client" />
-        <Resource Include="Images\*.png" />
-        <!-- <Resource Include="Images\*.JPG" /> -->
+        <Resource Include="Images\rk.png" />
+        <Resource Include="Images\ra.png" />
+        <Resource Include="Images\rn.png" />
+        <Resource Include="Images\rr.png" />
+        <Resource Include="Images\rb.png" />
+        <Resource Include="Images\rc.png" />
+        <Resource Include="Images\rp.png" />
+        <Resource Include="Images\bk.png" />
+        <Resource Include="Images\ba.png" />
+        <Resource Include="Images\bn.png" />
+        <Resource Include="Images\br.png" />
+        <Resource Include="Images\bb.png" />
+        <Resource Include="Images\bc.png" />
+        <Resource Include="Images\bp.png" />
+            <!-- <Resource Include="Images\*.JPG" /> -->
     </ItemGroup>
     <ItemGroup>
         <Resource Include="Images\oip.png" />
