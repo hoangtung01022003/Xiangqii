@@ -81,45 +81,123 @@ namespace ChessServer.Services
             try
             {
                 LogToConsole($"Processing move from {request.From} to {request.To}...");
+
+                // Lấy PlayerId từ metadata
+                string playerId = context.RequestHeaders.FirstOrDefault(h => h.Key == "PlayerId")?.Value;
+                if (string.IsNullOrEmpty(playerId))
+                {
+                    LogToConsole("Missing PlayerId in request headers.");
+                    return Task.FromResult(new MoveResponse
+                    {
+                        Success = false,
+                        Message = "Missing PlayerId in request"
+                    });
+                }
+
                 if (game == null)
-                    return Task.FromResult(new MoveResponse { Success = false, Message = "Game not started" });
+                    return Task.FromResult(new MoveResponse
+                    {
+                        Success = false,
+                        Message = "Game not started"
+                    });
 
                 if (!TryParsePosition(request.From, out XiangqiPosition from) || !TryParsePosition(request.To, out XiangqiPosition to))
-                    return Task.FromResult(new MoveResponse { Success = false, Message = "Invalid position format" });
+                    return Task.FromResult(new MoveResponse
+                    {
+                        Success = false,
+                        Message = "Invalid position format"
+                    });
 
                 var piece = game.GetPieceAt(from);
                 if (piece == null)
-                    return Task.FromResult(new MoveResponse { Success = false, Message = "No piece at starting position" });
+                    return Task.FromResult(new MoveResponse
+                    {
+                        Success = false,
+                        Message = "No piece at starting position"
+                    });
 
+                // Kiểm tra xem có phải lượt của người chơi hiện tại không
                 if (piece.Owner != game.WhoseTurn)
-                    return Task.FromResult(new MoveResponse { Success = false, Message = "It's not your turn" });
+                    return Task.FromResult(new MoveResponse
+                    {
+                        Success = false,
+                        Message = "It's not your turn"
+                    });
+
+                // Kiểm tra xem người chơi có đang di chuyển quân cờ của mình không
+                string playerColor = null;
+                foreach (var entry in players)
+                {
+                    if (entry.Value == playerId)
+                    {
+                        playerColor = entry.Key;
+                        break;
+                    }
+                }
+
+                if (playerColor == null)
+                    return Task.FromResult(new MoveResponse
+                    {
+                        Success = false,
+                        Message = "Player not connected"
+                    });
+
+                if ((playerColor == "red" && piece.Owner != Player.Red) ||
+                    (playerColor == "black" && piece.Owner != Player.Black))
+                {
+                    return Task.FromResult(new MoveResponse
+                    {
+                        Success = false,
+                        Message = "You can only move your own pieces"
+                    });
+                }
 
                 XiangqiMove move = new XiangqiMove(from, to, game.WhoseTurn);
                 if (game.IsValidMove(move))
                 {
                     game.MakeMove(move, true);
                     string message = "Move accepted";
+
                     if (game.IsInCheck(game.WhoseTurn))
                         message = "Check!";
                     if (game.IsCheckmate(game.WhoseTurn))
-                        return Task.FromResult(new MoveResponse { Success = true, Message = "Checkmate! Game over" });
+                        return Task.FromResult(new MoveResponse
+                        {
+                            Success = true,
+                            Message = "Checkmate! Game over"
+                        });
                     if (game.IsStalemate(game.WhoseTurn))
-                        return Task.FromResult(new MoveResponse { Success = true, Message = "Stalemate! Game over" });
+                        return Task.FromResult(new MoveResponse
+                        {
+                            Success = true,
+                            Message = "Stalemate! Game over"
+                        });
 
                     LogToConsole($"Move accepted: {request.From} to {request.To}.");
-                    return Task.FromResult(new MoveResponse { Success = true, Message = message });
+                    return Task.FromResult(new MoveResponse
+                    {
+                        Success = true,
+                        Message = message
+                    });
                 }
 
                 LogToConsole("Move rejected: invalid move.");
-                return Task.FromResult(new MoveResponse { Success = false, Message = "Invalid move" });
+                return Task.FromResult(new MoveResponse
+                {
+                    Success = false,
+                    Message = "Invalid move"
+                });
             }
             catch (Exception ex)
             {
                 LogToConsole($"Error processing move: {ex.Message}", ex);
-                return Task.FromResult(new MoveResponse { Success = false, Message = $"Error: {ex.Message}" });
+                return Task.FromResult(new MoveResponse
+                {
+                    Success = false,
+                    Message = $"Error: {ex.Message}"
+                });
             }
         }
-
         public override Task<ResignResponse> Resign(ResignRequest request, ServerCallContext context)
         {
             try

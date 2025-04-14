@@ -115,13 +115,43 @@
                 <StackPanel Grid.Row="0"
                             Orientation="Horizontal"
                             HorizontalAlignment="Center"
-                            Margin="0,0,0,20">
+                            Margin="0,10,0,10">
+                        <TextBlock Text="IP:"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,5,0"/>
                         <TextBox x:Name="ServerIpTextBox"
                                  Text="localhost"
-                                 ToolTip="Enter server IP"/>
+                                 Width="120"
+                                 Margin="0,0,10,0"
+                                 ToolTip="Nhập địa chỉ IP của máy chủ"/>
+
+                        <TextBlock Text="Cổng:"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,5,0"/>
+                        <TextBox x:Name="ServerPortTextBox"
+                                 Text="5038"
+                                 Width="50"
+                                 Margin="0,0,10,0"
+                                 ToolTip="Nhập cổng của máy chủ"/>
+
                         <Button x:Name="ConnectButton"
-                                Content="Connect"
+                                Content="Kết nối"
+                                Width="80"
+                                Margin="0,0,10,0"
                                 Click="ConnectButton_Click"/>
+
+                        <Button x:Name="NewGameButton"
+                                Content="Ván mới"
+                                Width="80"
+                                Margin="0,0,10,0"
+                                IsEnabled="False"
+                                Click="NewGameButton_Click"/>
+
+                        <Button x:Name="ResignButton"
+                                Content="Đầu hàng"
+                                Width="80"
+                                IsEnabled="False"
+                                Click="ResignButton_Click"/>
                 </StackPanel>
 
                 <!-- Bàn cờ -->
@@ -956,7 +986,7 @@
                 </Grid>
 
                 <!-- Các nút điều khiển và trạng thái -->
-                <StackPanel Grid.Row="2"
+                <!-- <StackPanel Grid.Row="2"
                             Orientation="Horizontal"
                             HorizontalAlignment="Center"
                             Margin="0,20,0,0">
@@ -971,6 +1001,6 @@
                         <TextBlock x:Name="StatusTextBlock"
                                    Text="Waiting for connection..."
                                    Style="{StaticResource StatusTextBlockStyle}"/>
-                </StackPanel>
+                </StackPanel> -->
         </Grid>
 </Window>
