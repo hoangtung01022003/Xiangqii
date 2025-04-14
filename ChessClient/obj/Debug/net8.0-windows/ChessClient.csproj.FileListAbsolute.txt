@@ -27,3 +27,4 @@ D:\congviec\ChessGame.NET\ChessClient\obj\Debug\net8.0-windows\refint\ChessClien
 D:\congviec\ChessGame.NET\ChessClient\obj\Debug\net8.0-windows\ChessClient.pdb
 D:\congviec\ChessGame.NET\ChessClient\obj\Debug\net8.0-windows\ChessClient.genruntimeconfig.cache
 D:\congviec\ChessGame.NET\ChessClient\obj\Debug\net8.0-windows\ref\ChessClient.dll
+D:\congviec\ChessGame.NET\ChessClient\obj\Debug\net8.0-windows\ChessClient.sourcelink.json

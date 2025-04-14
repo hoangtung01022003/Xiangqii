@@ -1,20 +1,27 @@
 using ChessServer.Services;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-builder.Services.AddGrpc();
+// Thêm hỗ trợ gRPC
+builder.Services.AddGrpc(options =>
+{
+    options.EnableDetailedErrors = true; // Bật lỗi chi tiết để debug
+});
 
 // Đăng ký ChessServiceImpl với lifetime Singleton
 builder.Services.AddSingleton<ChessServiceImpl>();
 
-// Nghe trên mọi giao diện mạng
+// Lắng nghe trên mọi giao diện mạng, cổng 5038
 builder.WebHost.UseUrls("http://0.0.0.0:5038");
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Cấu hình pipeline
+app.UseRouting();
 app.MapGrpcService<ChessServiceImpl>();
-app.MapGet("/", () => "Communication with gRPC endpoints must be made through a gRPC client. To learn how to create a client, visit: https://go.microsoft.com/fwlink/?linkid=2086909");
+app.MapGet("/", () => "gRPC server is running for Chinese Chess.");
 
-app.Run();
+await app.RunAsync();

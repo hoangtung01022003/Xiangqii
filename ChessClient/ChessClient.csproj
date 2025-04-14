@@ -11,7 +11,11 @@
         <PackageReference Include="ChessDotNet" Version="1.0.0" />
     </ItemGroup>
     <ItemGroup>
-        <Protobuf Include="Protos\chess.proto" GrpcServices="Client" />
+        <Protobuf Include="Protos\xiangqi.proto" GrpcServices="Client" />
         <Resource Include="Images\*.png" />
+        <!-- <Resource Include="Images\*.JPG" /> -->
+    </ItemGroup>
+    <ItemGroup>
+        <Resource Include="Images\oip.png" />
     </ItemGroup>
 </Project>

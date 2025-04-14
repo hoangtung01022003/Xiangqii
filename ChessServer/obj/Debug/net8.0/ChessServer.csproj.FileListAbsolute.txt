@@ -33,3 +33,4 @@ D:\congviec\ChessGame.NET\ChessServer\obj\Debug\net8.0\refint\ChessServer.dll
 D:\congviec\ChessGame.NET\ChessServer\obj\Debug\net8.0\ChessServer.pdb
 D:\congviec\ChessGame.NET\ChessServer\obj\Debug\net8.0\ChessServer.genruntimeconfig.cache
 D:\congviec\ChessGame.NET\ChessServer\obj\Debug\net8.0\ref\ChessServer.dll
+D:\congviec\ChessGame.NET\ChessServer\obj\Debug\net8.0\ChessServer.sourcelink.json

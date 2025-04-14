@@ -10,9 +10,10 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
-using ChessDotNet;
 using ChessServer;
-using ChessDotNet.Pieces;
+using ChessClient.Xiangqi;
+using System.IO;
+using Path = System.IO.Path;
 
 namespace ChessClient.window
 {
@@ -21,9 +22,9 @@ namespace ChessClient.window
     private GrpcChannel channel;
     private ChessService.ChessServiceClient client;
     private string playerId;
-    private string playerColor;
+    private string playerColor; // red hoặc black
     private string currentFen;
-    private Position selectedPosition = null;
+    private XiangqiPosition selectedPosition = null;
     private bool isMyTurn = false;
     private Dictionary<string, BitmapImage> pieceImages = new Dictionary<string, BitmapImage>();
 
@@ -31,10 +32,12 @@ namespace ChessClient.window
     {
       try
       {
-        LogToConsole("Starting MainWindow constructor...");
         InitializeComponent();
         InitializeChessBoard();
         LoadPieceImages();
+        // Khởi tạo bàn cờ mặc định
+        currentFen = new XiangqiGame().GetFen();
+        UpdateGameState(new GameStateResponse { Fen = currentFen, CurrentTurn = "red" });
         LogToConsole("MainWindow initialized successfully.");
       }
       catch (Exception ex)
@@ -48,190 +51,224 @@ namespace ChessClient.window
       string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
       string logMessage = $"[Client] [{timestamp}] {message}";
       if (ex != null)
-      {
         logMessage += $"\nError: {ex.Message}\nStackTrace: {ex.StackTrace}";
-      }
       Console.WriteLine(logMessage);
+      File.AppendAllText("debug.log", logMessage + "\n");
     }
 
     private void InitializeChessBoard()
     {
-      LogToConsole("Initializing chessboard...");
-      ChessBoard.Children.Clear();
-      for (int row = 0; row < 8; row++)
+      try
       {
-        for (int col = 0; col < 8; col++)
-        {
-          Rectangle rect = new Rectangle
-          {
-            Fill = (row + col) % 2 == 0 ? Brushes.White : Brushes.Gray,
-            IsHitTestVisible = false // Ngăn Rectangle chặn chuột
-          };
-          Grid.SetRow(rect, row);
-          Grid.SetColumn(rect, col);
-          ChessBoard.Children.Add(rect);
-          LogToConsole($"Added rectangle at row {row}, col {col}");
+        LogToConsole("Initializing Xiangqi board...");
+        ChessBoard.Children.Clear();
 
-          File file = (File)col;
-          int rank = 8 - row;
-          Image img = new Image
+        double squareWidth = 450.0 / 9; // 50px mỗi cột
+        double squareHeight = 500.0 / 10; // 50px mỗi hàng
+
+        // Đặt Image cho quân cờ
+        for (int row = 0; row < 10; row++)
+        {
+          for (int col = 0; col < 9; col++)
           {
-            Tag = new Position(file, rank),
-            Width = 60,  // Kích thước đủ lớn cho ô trống
-            Height = 60,
-            Stretch = Stretch.Fill
-          };
-          img.MouseDown += Image_MouseDown;
-          Grid.SetRow(img, row);
-          Grid.SetColumn(img, col);
-          ChessBoard.Children.Add(img);
-          LogToConsole($"Added image at row {row}, col {col}, position {(char)('a' + col)}{rank}");
+            Image img = new Image
+            {
+              Tag = new XiangqiPosition(col + 1, row),
+              Width = 50,  // Giảm kích thước để lộ lưới
+              Height = 50, // Giảm kích thước để lộ lưới
+              Stretch = Stretch.Uniform,
+              IsHitTestVisible = true
+            };
+            // Căn giữa ảnh trong ô
+            Canvas.SetLeft(img, col * squareWidth + (squareWidth - 50) / 2); // Căn giữa theo chiều ngang
+            Canvas.SetTop(img, row * squareHeight + (squareHeight - 50) / 2); // Căn giữa theo chiều dọc
+            Canvas.SetZIndex(img, 100); // Giữ z-index cao để tương tác
+            ChessBoard.Children.Add(img);
+          }
         }
+
+        ChessBoard.MouseDown += ChessBoard_MouseDown;
+        LogToConsole("Xiangqi board initialized.");
       }
-      LogToConsole($"Chessboard initialized. Total children: {ChessBoard.Children.Count}");
+      catch (Exception ex)
+      {
+        LogToConsole("Error initializing Xiangqi board.", ex);
+      }
     }
     private void LoadPieceImages()
     {
       try
       {
-        LogToConsole("Loading piece images...");
+        LogToConsole("Loading Xiangqi piece images...");
         var pieceMappings = new Dictionary<string, string>
-        {
-            { "wp", "Chess_plt60.png" },
-            { "wn", "Chess_nlt60.png" },
-            { "wb", "Chess_blt60.png" },
-            { "wr", "Chess_rlt60.png" },
-            { "wq", "Chess_qlt60.png" },
-            { "wk", "Chess_klt60.png" },
-            { "bp", "Chess_pdt60.png" },
-            { "bn", "Chess_ndt60.png" },
-            { "bb", "Chess_bdt60.png" },
-            { "br", "Chess_rdt60.png" },
-            { "bq", "Chess_qdt60.png" },
-            { "bk", "Chess_kdt60.png" }
-        };
+                {
+                    { "rk", "rk.png" }, // Tướng đỏ
+                    { "ra", "ra.png" }, // Sĩ đỏ
+                    { "rn", "rn.png" }, // Tượng đỏ
+                    { "rr", "rr.png" }, // Xe đỏ
+                    { "rb", "rb.png" }, // Pháo đỏ
+                    { "rc", "rc.png" }, // Mã đỏ
+                    { "rp", "rp.png" }, // Tốt đỏ
+                    { "bk", "bk.png" }, // Tướng đen
+                    { "ba", "ba.png" }, // Sĩ đen
+                    { "bn", "bn.png" }, // Tượng đen
+                    { "br", "br.png" }, // Xe đen
+                    { "bb", "bb.png" }, // Pháo đen
+                    { "bc", "bc.png" }, // Mã đen
+                    { "bp", "bp.png" }  // Tốt đen
+                };
 
         string basePath = @"D:\congviec\ChessGame.NET\ChessClient\Images\";
-        pieceImages.Clear(); // Xóa ánh xạ cũ
+        pieceImages.Clear();
         foreach (var piece in pieceMappings)
         {
-          string imagePath = System.IO.Path.Combine(basePath, piece.Value);
-          try
+          string imagePath = Path.Combine(basePath, piece.Value);
+          if (!File.Exists(imagePath))
           {
-            var image = new BitmapImage();
-            image.BeginInit();
-            image.UriSource = new Uri(imagePath, UriKind.Absolute);
-            image.CacheOption = BitmapCacheOption.OnLoad;
-            image.EndInit();
-            pieceImages[piece.Key] = image;
-            LogToConsole($"Loaded image for {piece.Key}: {imagePath}");
+            LogToConsole($"Image not found: {imagePath}. Skipping...");
+            continue;
           }
-          catch (Exception ex)
-          {
-            LogToConsole($"Failed to load image for {piece.Key}: {imagePath}", ex);
-          }
+          var image = new BitmapImage();
+          image.BeginInit();
+          image.UriSource = new Uri(imagePath, UriKind.Absolute);
+          image.CacheOption = BitmapCacheOption.OnLoad;
+          image.EndInit();
+          pieceImages[piece.Key] = image;
+          LogToConsole($"Loaded image for {piece.Key}: {imagePath}");
         }
-        LogToConsole($"Piece images loaded successfully. Total images: {pieceImages.Count}, Keys: {string.Join(", ", pieceImages.Keys)}");
+        LogToConsole($"Piece images loaded: {pieceImages.Count}");
       }
       catch (Exception ex)
       {
         LogToConsole("Error loading piece images.", ex);
       }
     }
-    private async void ConnectButton_Click(object sender, RoutedEventArgs e)
+    private void ChessBoard_MouseDown(object sender, MouseButtonEventArgs e)
     {
       try
       {
-        // Tạo mới playerId cho mỗi lần kết nối
-        playerId = Guid.NewGuid().ToString();
-        string ipAddress = ServerIpTextBox.Text;
-        LogToConsole($"Attempting to connect to server at {ipAddress} with PlayerId: {playerId}...");
-
-        // Khởi tạo gRPC channel
-        channel = GrpcChannel.ForAddress($"http://{ipAddress}");
-        client = new ChessService.ChessServiceClient(channel);
-
-        // Gửi yêu cầu kết nối
-        var connectResponse = await client.ConnectAsync(new ConnectRequest { PlayerId = playerId });
-
-        // Kiểm tra phản hồi từ server
-        if (string.IsNullOrEmpty(connectResponse.Color))
+        var point = e.GetPosition(ChessBoard);
+        double squareWidth = 450.0 / 9; // 50px
+        double squareHeight = 500.0 / 10; // 50px
+        int col = (int)(point.X / squareWidth) + 1;
+        int row = (int)(point.Y / squareHeight);
+        if (col >= 1 && col <= 9 && row >= 0 && row <= 9)
         {
-          StatusTextBlock.Text = "Connection failed: No color assigned.";
-          LogToConsole($"Connection failed: Server did not assign a color for PlayerId: {playerId}.");
-          return;
+          string pos = $"{col}{row}";
+          LogToConsole($"ChessBoard_MouseDown at {pos}");
+          var img = ChessBoard.Children
+              .OfType<Image>()
+              .FirstOrDefault(i => Math.Abs(Canvas.GetLeft(i) + 22.5 - (col - 1) * squareWidth) < squareWidth / 2 &&
+                                   Math.Abs(Canvas.GetTop(i) + 22.5 - row * squareHeight) < squareHeight / 2);
+          if (img != null)
+            Image_MouseDown(img, e);
         }
-
-        // Gán màu người chơi
-        playerColor = connectResponse.Color.ToLower(); // Chuẩn hóa thành chữ thường
-        StatusTextBlock.Text = $"Connected as {playerColor}";
-        LogToConsole($"Connected successfully as {playerColor} with PlayerId: {playerId}.");
-
-        // Bắt đầu luồng nhận trạng thái game
-        _ = Task.Run(async () =>
-        {
-          try
-          {
-            var call = client.GetGameState(new GameStateRequest { PlayerId = playerId });
-            LogToConsole($"Started receiving game state stream for PlayerId: {playerId}.");
-            await foreach (var state in call.ResponseStream.ReadAllAsync())
-            {
-              Dispatcher.Invoke(() => UpdateGameState(state));
-            }
-          }
-          catch (Exception ex)
-          {
-            Dispatcher.Invoke(() =>
-            {
-              StatusTextBlock.Text = "Disconnected from game state stream.";
-              LogToConsole($"Error in game state stream for PlayerId: {playerId}.", ex);
-            });
-          }
-        });
-
-        // Cập nhật trạng thái giao diện
-        ConnectButton.IsEnabled = false;
-        NewGameButton.IsEnabled = true;
-        ResignButton.IsEnabled = true;
       }
       catch (Exception ex)
       {
-        StatusTextBlock.Text = "Connection failed.";
-        LogToConsole($"Connection failed for PlayerId: {playerId}.", ex);
+        LogToConsole($"Error in ChessBoard_MouseDown: {ex.Message}", ex);
       }
     }
-    /// <summary>
-    /// Cải tiến trực quan cho bảng và các mảnh cờ
-    /// </summary>
-    /// <param name="state"></param>
-    // Add these methods to the MainWindow class
-
-    private void HighlightSquare(Position pos, Brush color, double thickness = 2)
+    private async void Image_MouseDown(object sender, MouseButtonEventArgs e)
     {
       try
       {
-        int row = 8 - pos.Rank;
-        int col = (int)pos.File; // File.A = 0, ..., File.H = 7
-
-        if (row < 0 || row >= 8 || col < 0 || col >= 8)
+        Image img = sender as Image;
+        if (img == null) return;
+        XiangqiPosition pos = img.Tag as XiangqiPosition;
+        if (pos == null)
         {
-          LogToConsole($"Invalid highlight position: row={row}, col={col}");
+          LogToConsole("Invalid image tag.");
+          return;
+        }
+        string posStr = pos.ToNotation();
+        LogToConsole($"MouseDown at {posStr}, playerColor={playerColor}, isMyTurn={isMyTurn}");
+
+        if (string.IsNullOrEmpty(currentFen))
+        {
+          StatusTextBlock.Text = "Game not started. Please click 'New Game'.";
+          LogToConsole("Game not started: currentFen is empty.");
           return;
         }
 
-        var rect = ChessBoard.Children
-            .OfType<Rectangle>()
-            .FirstOrDefault(r => Grid.GetRow(r) == row && Grid.GetColumn(r) == col);
+        var targetPiece = new XiangqiGame(currentFen).GetPieceAt(pos);
 
-        if (rect != null)
+        // Nếu đã chọn một quân cờ trước đó, đây là ô đích
+        if (selectedPosition != null)
         {
-          rect.Stroke = color;
-          rect.StrokeThickness = thickness;
-          LogToConsole($"Highlighted square at row {row}, col {col}");
+          var from = selectedPosition;
+          var to = pos;
+          var game = new XiangqiGame(currentFen);
+          var move = new XiangqiMove(from, to, playerColor == "red" ? Player.Red : Player.Black);
+
+          if (game.IsValidMove(move))
+          {
+            // Gửi yêu cầu di chuyển đến server
+            var request = new MoveRequest { From = from.ToNotation(), To = to.ToNotation() };
+            var response = await client.MakeMoveAsync(request);
+            LogToConsole($"Moved from {from.ToNotation()} to {to.ToNotation()}: {response.Success} - {response.Message}");
+
+            if (response.Success)
+            {
+              StatusTextBlock.Text = "Move successful. Waiting for opponent's turn...";
+            }
+            else
+            {
+              StatusTextBlock.Text = $"Move failed: {response.Message}";
+            }
+          }
+          else
+          {
+            StatusTextBlock.Text = "Invalid move.";
+            LogToConsole($"Invalid move from {from.ToNotation()} to {to.ToNotation()}");
+          }
+
+          // Xóa lựa chọn sau khi di chuyển (thành công hoặc thất bại)
+          selectedPosition = null;
+          ClearAllHighlights();
+          return;
+        }
+
+        // Nếu chưa chọn quân cờ, xử lý việc chọn quân cờ
+        if (targetPiece != null && targetPiece.Owner.ToString().ToLower() == playerColor && isMyTurn)
+        {
+          selectedPosition = pos;
+          ClearAllHighlights();
+          HighlightSquare(pos, Brushes.LightGray, 3); // Tô sáng ô đang chọn màu xám nhạt
+          HighlightLegalMoves(pos);
+          StatusTextBlock.Text = $"Selected {posStr}. Choose destination.";
         }
         else
         {
-          LogToConsole($"No rectangle found at row {row}, col {col}");
+          StatusTextBlock.Text = targetPiece == null ? $"No piece at {posStr}." :
+                                 isMyTurn ? "Select your piece." : "Not your turn.";
+          LogToConsole($"Cannot select piece at {posStr}: pieceOwner={targetPiece?.Owner}, playerColor={playerColor}, isMyTurn={isMyTurn}");
+        }
+      }
+      catch (Exception ex)
+      {
+        LogToConsole($"Error in Image_MouseDown: {ex.Message}", ex);
+      }
+    }
+    private void HighlightSquare(XiangqiPosition pos, Brush color, double thickness)
+    {
+      try
+      {
+        double squareWidth = 450.0 / 9; // 50px
+        double squareHeight = 500.0 / 10; // 50px
+        int col = pos.File - 1;
+        int row = pos.Rank;
+
+        var ellipse = ChessBoard.Children
+            .OfType<Ellipse>()
+            .FirstOrDefault(e => Math.Abs(Canvas.GetLeft(e) + 3 - col * squareWidth) < 0.01 &&
+                                 Math.Abs(Canvas.GetTop(e) + 3 - row * squareHeight) < 0.01);
+
+        if (ellipse != null)
+        {
+          ellipse.Stroke = color;
+          ellipse.StrokeThickness = thickness;
+          Canvas.SetZIndex(ellipse, 0);
         }
       }
       catch (Exception ex)
@@ -241,131 +278,110 @@ namespace ChessClient.window
     }
     private void ClearAllHighlights()
     {
-      foreach (var rect in ChessBoard.Children.OfType<Rectangle>())
+      foreach (var ellipse in ChessBoard.Children.OfType<Ellipse>())
       {
-        rect.Stroke = null;
-        rect.StrokeThickness = 0;
+        ellipse.Stroke = null;
+        ellipse.StrokeThickness = 0;
       }
     }
 
-    private void HighlightLegalMoves(Position from)
+    private void HighlightLegalMoves(XiangqiPosition from)
     {
-      if (string.IsNullOrEmpty(currentFen))
-        return;
-
       try
       {
-        var game = new ChessGame(currentFen);
+        LogToConsole($"Highlighting legal moves from {from.ToNotation()}...");
+        var game = new XiangqiGame(currentFen);
         var piece = game.GetPieceAt(from);
-        if (piece == null)
-        {
-          LogToConsole($"No piece at {from} to highlight moves.");
-          return;
-        }
+        if (piece == null) return;
 
-        LogToConsole($"Highlighting legal moves for {piece.GetType().Name} at {from}");
-
-        // Duyệt qua tất cả các ô trên bàn cờ
-        for (int rank = 1; rank <= 8; rank++)
+        for (int rank = 0; rank < 10; rank++)
         {
-          for (File file = File.A; file <= File.H; file++)
+          for (int file = 1; file <= 9; file++)
           {
-            Position to = new Position(file, rank);
-            Move move = new Move(from, to, game.WhoseTurn);
-
+            XiangqiPosition to = new XiangqiPosition(file, rank);
+            XiangqiMove move = new XiangqiMove(from, to, piece.Owner);
             if (game.IsValidMove(move))
             {
-              LogToConsole($"Legal move found: from {from} to {to}");
-              HighlightSquare(to, Brushes.LightGreen, 2); // Tô sáng ô hợp lệ
+              HighlightSquare(to, Brushes.White, 3); // Tô sáng màu trắng
+              LogToConsole($"Highlighted legal move to {to.ToNotation()}");
             }
           }
         }
       }
       catch (Exception ex)
       {
-        LogToConsole($"Error highlighting legal moves for {from}: {ex.Message}", ex);
+        LogToConsole($"Error highlighting legal moves: {ex.Message}", ex);
       }
     }
     private void UpdateGameState(GameStateResponse state)
     {
       try
       {
-        LogToConsole($"Updating game state with Message: {state.Message}...");
-        if (!string.IsNullOrEmpty(state.Message) && state.Message.Contains("Game not started"))
+        if (state != null && state.Message.Contains("Game not started"))
         {
           StatusTextBlock.Text = "Waiting for game to start...";
-          LogToConsole("Game not started.");
-          currentFen = null; // Xóa FEN để ngăn tương tác
+          currentFen = null;
           ClearAllHighlights();
           ChessBoard.Children.OfType<Image>().ToList().ForEach(img => img.Source = null);
           return;
         }
 
-        currentFen = state.Fen;
-        if (string.IsNullOrEmpty(currentFen))
-        {
-          LogToConsole("FEN is empty or null, using default FEN.");
-          currentFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-        }
-        LogToConsole($"Processing FEN: {currentFen}");
+        currentFen = state?.Fen ?? currentFen ?? new XiangqiGame().GetFen();
+        LogToConsole($"Updating game state with FEN: {currentFen}");
 
-        var board = ParseFen(currentFen);
+        var game = new XiangqiGame(currentFen); // Tạo instance của XiangqiGame từ FEN
 
-        for (int row = 0; row < 8; row++)
+        for (int row = 0; row < 10; row++)
         {
-          for (int col = 0; col < 8; col++)
+          for (int col = 0; col < 9; col++)
           {
-            int rank = 8 - row;
-            string fileLetter = ((char)('a' + col)).ToString();
-            Piece piece = board[col, 7 - row];
-
-            LogToConsole($"Piece at {fileLetter}{rank}: {(piece != null ? piece.GetFenCharacter() : "null")}");
-
+            XiangqiPosition pos = new XiangqiPosition(col + 1, row);
+            XiangqiPiece piece = game.GetPieceAt(pos); // Sử dụng GetPieceAt thay vì GetBoard
             var img = ChessBoard.Children
                 .OfType<Image>()
-                .FirstOrDefault(i => Grid.GetRow(i) == row && Grid.GetColumn(i) == col);
+                .FirstOrDefault(i => i.Tag is XiangqiPosition p &&
+                                     p.File == col + 1 && p.Rank == row);
             if (img != null)
             {
               img.Source = GetPieceImage(piece);
-              LogToConsole($"Set image at position {fileLetter}{rank}: {(piece != null ? piece.GetFenCharacter() : "null")}");
-            }
-            else
-            {
-              LogToConsole($"No image control found at row {row}, col {col}");
+              img.Width = 50;  // Đảm bảo kích thước
+              img.Height = 50; // Đảm bảo kích thước
+              Canvas.SetZIndex(img, 100);
             }
           }
         }
 
-        LogToConsole($"Checking turn: CurrentTurn={state.CurrentTurn}, PlayerColor={playerColor}, IsCheckmate={state.IsCheckmate}, IsStalemate={state.IsStalemate}");
-        isMyTurn = state.CurrentTurn.ToLower() == playerColor &&
-                   !state.IsCheckmate &&
-                   !state.IsStalemate;
-        LogToConsole($"Set IsMyTurn={isMyTurn} for PlayerId: {playerId}");
-
-        StatusTextBlock.Text = $"Current turn: {state.CurrentTurn}";
-        if (state.IsCheck) StatusTextBlock.Text += " - Check!";
-        if (state.IsCheckmate) StatusTextBlock.Text = "Checkmate! Game over.";
-        else if (state.IsStalemate) StatusTextBlock.Text = "Stalemate! Game over.";
-
-        LogToConsole($"Game state updated. Current turn: {state.CurrentTurn}, IsMyTurn: {isMyTurn}, PlayerColor: {playerColor}");
+        if (state != null)
+        {
+          isMyTurn = state.CurrentTurn.ToLower() == playerColor && !state.IsCheckmate && !state.IsStalemate;
+          StatusTextBlock.Text = $"Current turn: {state.CurrentTurn}";
+          if (state.IsCheck) StatusTextBlock.Text += " - Check!";
+          if (state.IsCheckmate) StatusTextBlock.Text = "Checkmate! Game over.";
+          else if (state.IsStalemate) StatusTextBlock.Text = "Stalemate! Game over.";
+          else if (state.Message.Contains("Draw")) StatusTextBlock.Text = "Draw! Game over.";
+        }
+        else
+        {
+          StatusTextBlock.Text = "Waiting for server connection...";
+        }
       }
       catch (Exception ex)
       {
-        LogToConsole("Error updating game state.", ex);
+        LogToConsole($"Error updating game state: {ex.Message}", ex);
       }
     }
-    private static Piece[,] ParseFen(string fen)
+    private XiangqiPiece[,] ParseFen(string fen)
     {
       try
       {
-        Piece[,] board = new Piece[8, 8];
+        XiangqiPiece[,] board = new XiangqiPiece[9, 10];
         string[] parts = fen.Split(' ');
         string position = parts[0];
         string[] rows = position.Split('/');
 
-        for (int row = 0; row < 8; row++)
+        for (int row = 0; row < 10; row++)
         {
-          string fenRow = rows[7 - row]; // Hàng 8 -> row=0, hàng 1 -> row=7
+          string fenRow = rows[9 - row];
           int col = 0;
           foreach (char c in fenRow)
           {
@@ -373,278 +389,140 @@ namespace ChessClient.window
             {
               int emptySquares = int.Parse(c.ToString());
               for (int i = 0; i < emptySquares; i++)
-              {
-                if (col < 8)
-                {
-                  board[col, row] = null;
-                  col++;
-                }
-              }
+                if (col < 9) col++;
             }
             else
             {
-              if (col < 8)
+              if (col < 9)
               {
-                Piece piece = CreatePiece(c);
-                board[col, row] = piece;
+                board[col, row] = CreatePiece(c);
                 col++;
               }
             }
           }
         }
+        LogToConsole("FEN parsed successfully.");
         return board;
       }
       catch (Exception ex)
       {
         LogToConsole($"Error parsing FEN: {fen}", ex);
-        return new Piece[8, 8];
+        return new XiangqiPiece[9, 10];
       }
     }
-    private static Piece CreatePiece(char fenChar)
-    {
-      Player owner = char.IsUpper(fenChar) ? Player.White : Player.Black;
-      char pieceType = char.ToLower(fenChar);
-      switch (pieceType)
-      {
-        case 'p': return new Pawn(owner);
-        case 'r': return new Rook(owner);
-        case 'n': return new Knight(owner);
-        case 'b': return new Bishop(owner);
-        case 'q': return new Queen(owner);
-        case 'k': return new King(owner);
-        default: return null;
-      }
-    }
-    private BitmapImage GetPieceImage(Piece piece)
+
+    private XiangqiPiece CreatePiece(char fenChar)
     {
       try
       {
-        if (piece == null)
+        Player owner = char.IsUpper(fenChar) ? Player.Red : Player.Black;
+        char pieceType = char.ToLower(fenChar);
+        LogToConsole($"Creating piece for FEN char: {fenChar}");
+        return pieceType switch
         {
-          LogToConsole("Piece is null, returning null image.");
-          return null;
-        }
-        char fenChar = piece.GetFenCharacter();
-        string color = char.IsUpper(fenChar) ? "w" : "b";
-        string type = fenChar.ToString().ToLower() switch
-        {
-          "p" => "p",
-          "n" => "n",
-          "b" => "b",
-          "r" => "r",
-          "q" => "q",
-          "k" => "k",
-          _ => ""
+          'k' => new XiangqiPiece(PieceType.General, owner),
+          'a' => new XiangqiPiece(PieceType.Advisor, owner),
+          'n' => new XiangqiPiece(PieceType.Elephant, owner),
+          'r' => new XiangqiPiece(PieceType.Chariot, owner),
+          'b' => new XiangqiPiece(PieceType.Cannon, owner),
+          'c' => new XiangqiPiece(PieceType.Horse, owner),
+          'p' => new XiangqiPiece(PieceType.Soldier, owner),
+          _ => null
         };
-        if (string.IsNullOrEmpty(type))
-        {
-          LogToConsole($"Invalid FEN character: {fenChar}");
-          return null;
-        }
+      }
+      catch (Exception ex)
+      {
+        LogToConsole($"Error creating piece for char: {fenChar}", ex);
+        return null;
+      }
+    }
+
+    private BitmapImage GetPieceImage(XiangqiPiece piece)
+    {
+      try
+      {
+        if (piece == null) return null;
+        char fenChar = piece.GetFenCharacter();
+        string color = char.IsUpper(fenChar) ? "r" : "b";
+        string type = fenChar.ToString().ToLower();
         string key = color + type;
+        LogToConsole($"Attempting to get image for key: {key}");
         if (pieceImages.TryGetValue(key, out var image))
         {
-          LogToConsole($"Returning image for {key}: {image.UriSource}");
+          LogToConsole($"Image found for {key}");
           return image;
         }
-        LogToConsole($"No image found for {key}.");
+        LogToConsole($"No image found for {key}");
         return null;
       }
       catch (Exception ex)
       {
-        LogToConsole("Error getting piece image.", ex);
+        LogToConsole($"Error getting piece image: {ex.Message}", ex);
         return null;
       }
     }
-    private void Image_MouseEnter(object sender, MouseEventArgs e)
+
+    private async void ConnectButton_Click(object sender, RoutedEventArgs e)
     {
       try
       {
-        Image img = (Image)sender;
-        Position pos = (Position)img.Tag;
-        if ((int)pos.File < 0 || (int)pos.File > 7 || pos.Rank < 1 || pos.Rank > 8)
+        playerId = Guid.NewGuid().ToString();
+        string ipAddress = ServerIpTextBox.Text;
+        LogToConsole($"Attempting to connect to http://{ipAddress}:5038");
+        channel = GrpcChannel.ForAddress($"http://{ipAddress}:5038");
+        client = new ChessService.ChessServiceClient(channel);
+        var connectResponse = await client.ConnectAsync(new ConnectRequest { PlayerId = playerId });
+
+        if (string.IsNullOrEmpty(connectResponse.Color))
         {
-          LogToConsole($"Invalid position on hover: {pos.File}, {pos.Rank}");
+          StatusTextBlock.Text = "Connection failed.";
           return;
         }
 
-        LogToConsole($"Hover at position: {PositionToString(pos)}");
-        if (!string.IsNullOrEmpty(currentFen))
+        playerColor = connectResponse.Color.ToLower();
+        StatusTextBlock.Text = $"Connected as {playerColor}";
+        ConnectButton.IsEnabled = false;
+        NewGameButton.IsEnabled = true;
+        ResignButton.IsEnabled = true;
+
+        _ = Task.Run(async () =>
         {
-          var game = new ChessGame(currentFen);
-          var piece = game.GetPieceAt(pos);
-          if (piece != null)
+          try
           {
-            LogToConsole($"Piece at {PositionToString(pos)}: {piece.GetFenCharacter()}");
-            HighlightSquare(pos, Brushes.Yellow, 2);
+            var call = client.GetGameState(new GameStateRequest { PlayerId = playerId });
+            await foreach (var state in call.ResponseStream.ReadAllAsync())
+            {
+              Dispatcher.Invoke(() => UpdateGameState(state));
+            }
           }
-          else
+          catch (Exception ex)
           {
-            LogToConsole($"No piece at {PositionToString(pos)}");
+            Dispatcher.Invoke(() =>
+                    {
+                      StatusTextBlock.Text = "Disconnected from game state stream.";
+                      LogToConsole($"Error in game state stream: {ex.Message}", ex);
+                    });
           }
-        }
+        });
       }
       catch (Exception ex)
       {
-        LogToConsole($"Error in Image_MouseEnter: {ex.Message}", ex);
+        StatusTextBlock.Text = "Connection failed.";
+        LogToConsole($"Connection failed: {ex.Message}", ex);
       }
     }
 
-    private void Image_MouseLeave(object sender, MouseEventArgs e)
-    {
-      try
-      {
-        Image img = (Image)sender;
-        Position pos = (Position)img.Tag;
-        if ((int)pos.File < 0 || (int)pos.File > 7 || pos.Rank < 1 || pos.Rank > 8)
-        {
-          LogToConsole($"Invalid position on leave: {pos.File}, {pos.Rank}");
-          return;
-        }
-        HighlightSquare(pos, null, 0);
-      }
-      catch (Exception ex)
-      {
-        LogToConsole($"Error in Image_MouseLeave: {ex.Message}", ex);
-      }
-    }
-
-    private async void Image_MouseDown(object sender, MouseButtonEventArgs e)
-    {
-      try
-      {
-        LogToConsole("Image_MouseDown triggered.");
-        Image img = sender as Image;
-        if (img == null)
-        {
-          LogToConsole("Sender is not an Image.");
-          return;
-        }
-
-        Position pos = img.Tag as Position;
-        if (pos == null)
-        {
-          LogToConsole("Invalid position.");
-          return;
-        }
-
-        LogToConsole($"Mouse down at position {PositionToString(pos)}");
-
-        if (string.IsNullOrEmpty(currentFen))
-        {
-          LogToConsole("No game state available.");
-          return;
-        }
-
-        var game = new ChessGame(currentFen);
-        var targetPiece = game.GetPieceAt(pos);
-
-        if (selectedPosition == null)
-        {
-          // Click lần 1: Chọn quân cờ
-          if (targetPiece != null && targetPiece.Owner.ToString().ToLower() == playerColor && isMyTurn)
-          {
-            selectedPosition = pos;
-            LogToConsole($"Selected piece at {PositionToString(pos)}");
-            ClearAllHighlights();
-            HighlightSquare(pos, Brushes.Blue, 3);
-            HighlightLegalMoves(pos);
-          }
-          else
-          {
-            LogToConsole("Cannot select: Not your piece or not your turn.");
-          }
-        }
-        else
-        {
-          // Click lần 2: Di chuyển, hủy chọn, hoặc chọn quân mới
-          string from = PositionToString(selectedPosition);
-          string to = PositionToString(pos);
-          LogToConsole($"Attempting move from {from} to {to}");
-
-          if (from == to)
-          {
-            selectedPosition = null;
-            ClearAllHighlights();
-            LogToConsole($"Deselected piece at {from}");
-            return;
-          }
-
-          Move move = new Move(selectedPosition, pos, playerColor == "white" ? Player.White : Player.Black);
-          if (game.IsValidMove(move))
-          {
-            try
-            {
-              var moveRequest = new MoveRequest { From = from, To = to };
-              LogToConsole($"Sending MakeMove request: From={from}, To={to}");
-              var moveResponse = await client.MakeMoveAsync(moveRequest);
-
-              if (moveResponse.Success)
-              {
-                LogToConsole($"Move succeeded: {from} to {to}");
-              }
-              else
-              {
-                LogToConsole($"Move failed: {moveResponse.Message}");
-              }
-            }
-            catch (Exception ex)
-            {
-              LogToConsole($"Error sending move: {ex.Message}");
-            }
-          }
-          else
-          {
-            // Nếu nhấp vào quân cờ khác của mình, chọn quân mới
-            if (targetPiece != null && targetPiece.Owner.ToString().ToLower() == playerColor && isMyTurn)
-            {
-              selectedPosition = pos;
-              LogToConsole($"Selected new piece at {PositionToString(pos)}");
-              ClearAllHighlights();
-              HighlightSquare(pos, Brushes.Blue, 3);
-              HighlightLegalMoves(pos);
-            }
-            else
-            {
-              LogToConsole($"Invalid move from {from} to {to}");
-            }
-          }
-        }
-      }
-      catch (Exception ex)
-      {
-        LogToConsole($"Error in Image_MouseDown: {ex.Message}");
-        selectedPosition = null;
-      }
-    }
-    private string PositionToString(Position pos)
-    {
-      try
-      {
-        char fileChar = (char)('a' + (int)pos.File); // File.A = 0 -> 'a', File.H = 7 -> 'h'
-        string result = $"{fileChar}{pos.Rank}";
-        LogToConsole($"Converted position to string: {result} for PlayerId: {playerId}.");
-        return result;
-      }
-      catch (Exception ex)
-      {
-        LogToConsole($"Error converting position to string for PlayerId: {playerId}.", ex);
-        return "";
-      }
-    }
     private async void NewGameButton_Click(object sender, RoutedEventArgs e)
     {
       try
       {
-        LogToConsole($"Starting new game for PlayerId: {playerId}...");
         var response = await client.StartGameAsync(new StartGameRequest { PlayerId = playerId });
         StatusTextBlock.Text = response.Message;
-        LogToConsole($"New game response: {response.Message} for PlayerId: {playerId}.");
       }
       catch (Exception ex)
       {
         StatusTextBlock.Text = "Error starting game.";
-        LogToConsole($"Error starting game for PlayerId: {playerId}.", ex);
+        LogToConsole($"Error starting game: {ex.Message}", ex);
       }
     }
 
@@ -652,15 +530,13 @@ namespace ChessClient.window
     {
       try
       {
-        LogToConsole($"Resigning game for PlayerId: {playerId}...");
         var response = await client.ResignAsync(new ResignRequest { PlayerId = playerId });
         StatusTextBlock.Text = response.Message;
-        LogToConsole($"Game resigned: {response.Message} for PlayerId: {playerId}.");
       }
       catch (Exception ex)
       {
         StatusTextBlock.Text = "Error resigning game.";
-        LogToConsole($"Error resigning game for PlayerId: {playerId}.", ex);
+        LogToConsole($"Error resigning game: {ex.Message}", ex);
       }
     }
   }
