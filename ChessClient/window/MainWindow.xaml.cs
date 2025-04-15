@@ -107,10 +107,10 @@ namespace ChessClient.window
             { "rp", "Images/rp.png" }, // Tốt đỏ
             { "bk", "Images/bk.png" }, // Tướng đen
             { "ba", "Images/ba.png" }, // Sĩ đen
-            { "bn", "Images/bn.png" }, // Tượng đen
+            { "bn", "Images/bn.png" }, // Tượng đenbb
             { "br", "Images/br.png" }, // Xe đen
-            { "bb", "Images/bb.png" }, // Pháo đen
-            { "bc", "Images/bc.png" }, // Mã đen
+            { "bb", "Images/bb.png" }, // Pháo đenbc
+            { "bc", "Images/bc.png" }, // Mã đenbn
             { "bp", "Images/bp.png" }  // Tốt đen
         };
 
