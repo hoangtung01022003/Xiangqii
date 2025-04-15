@@ -1,2 +1,0 @@
-obj\Debug\net8.0-windows\Protos/Xiangqi.cs \
-obj\Debug\net8.0-windows\Protos/XiangqiGrpc.cs: Protos/xiangqi.proto
